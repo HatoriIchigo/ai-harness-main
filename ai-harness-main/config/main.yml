@@ -1,0 +1,9 @@
+# ai-harness-main 設定ファイル
+# 配置先: <実行体ディレクトリ>/config/main.yml
+
+# 診断ログの出力閾値。これ未満のレベルは破棄。
+# 指定可能: Trace / Debug / Info / Warning / Error
+logLevel: Info
+
+# プラグイン発火の同時実行数上限。0 または未指定で論理プロセッサ数。
+maxParallel: 0
