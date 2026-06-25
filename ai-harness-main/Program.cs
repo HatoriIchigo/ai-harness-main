@@ -9,6 +9,7 @@ namespace ai_harness_main;
 ///   --daemon     … 常駐。名前付きパイプで接続を待ち受け、接続ごとに処理。
 ///   --ensure     … daemon 未起動なら detached 起動して終了（SessionStart 等から）。
 ///   --stop       … 稼働中の daemon を停止。
+///   --restart    … 稼働中の daemon を停止してから再起動（プラグイン DLL・config の変更反映用）。
 ///
 /// 終了コード（standalone / Claude hook 規約）: 0=許可 / 2=deny / 1=内部エラー（非ブロッキング）。
 /// 常駐時の hook 応答は client が中継する。ログは logs/&lt;日付&gt;.jsonl に集約。
@@ -42,6 +43,9 @@ public static class Program
 
             case "--stop":
                 return Daemon.Stop();
+
+            case "--restart":
+                return Daemon.Restart();
 
             default:
                 return await RunStandaloneAsync(config, configWarning).ConfigureAwait(false);

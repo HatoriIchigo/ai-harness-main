@@ -125,6 +125,22 @@ internal static class Daemon
         return 0;
     }
 
+    /// <summary>
+    /// 稼働中の daemon を停止してから起動し直す。プラグイン DLL や config の変更を反映する用途。
+    /// 旧プロセスの終了（パイプ消滅＝ロック解放）を待ってから起動し、多重起動ロックの競合を避ける。
+    /// </summary>
+    public static int Restart()
+    {
+        Stop();
+        // 旧プロセスの終了をポーリングで待つ（best-effort、上限約3秒）。
+        for (var i = 0; i < 30 && IsRunning(); i++)
+        {
+            Thread.Sleep(100);
+        }
+        StartDetached();
+        return 0;
+    }
+
     /// <summary>稼働中の daemon を停止させる。</summary>
     public static int Stop()
     {

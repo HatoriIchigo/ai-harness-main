@@ -57,11 +57,12 @@ internal sealed class HarnessCore
                 }
                 continue; // 発火対象から除外
             }
-            if (plugin.Tools is null && plugin.Events is null)
+            if (plugin.Tools is null && plugin.Events is null
+                && plugin.FileNames is null && plugin.BashCommands is null)
             {
                 // 発火条件が無い＝一切発火しない。除外はしないが警告する。
                 _logger.Emit(LogEntry.Warning(
-                    "Tools/Events が両方 null。発火条件が無いためこのプラグインは一切発火しない。") with { Source = name });
+                    "Tools/Events/FileNames/BashCommands が全て null。発火条件が無いためこのプラグインは一切発火しない。") with { Source = name });
             }
 
             // 設定ロード（ConfigName 必須）。未設定/不在は無効化（発火対象から除外）。
