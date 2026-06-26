@@ -1,6 +1,8 @@
 using System.Diagnostics;
 using System.IO.Pipes;
 using System.Text;
+using System.Text.Encodings.Web;
+using System.Text.Json;
 using ai_harness_baselib;
 
 namespace ai_harness_main;
@@ -91,8 +93,8 @@ internal static class Daemon
                 decision = new HostDecision(1, null); // 内部エラー → fail-open
             }
 
-            // client へは 2=deny / それ以外=許可（fail-open）。
-            await RespondAsync(server, decision.IsDeny ? 2 : 0, decision.Reason ?? string.Empty)
+            // client へは 2=deny / それ以外=許可（fail-open）。additionalContext は許可時も運ぶ。
+            await RespondAsync(server, decision.IsDeny ? 2 : 0, decision.Reason, decision.AdditionalContext)
                 .ConfigureAwait(false);
         }
         catch (Exception ex)
@@ -105,13 +107,24 @@ internal static class Daemon
         }
     }
 
-    private static async Task RespondAsync(NamedPipeServerStream server, int exitCode, string reason)
+    private static readonly JsonSerializerOptions ResponseJsonOptions = new()
     {
-        var reasonBytes = Encoding.UTF8.GetBytes(reason);
-        var buf = new byte[4 + reasonBytes.Length];
-        BitConverter.GetBytes(exitCode).CopyTo(buf, 0);
-        reasonBytes.CopyTo(buf, 4);
-        await Framing.WriteFrameAsync(server, buf).ConfigureAwait(false);
+        DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull,
+        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
+    };
+
+    /// <summary>応答ペイロード（UTF8 JSON）を1フレームで返す。</summary>
+    private static async Task RespondAsync(
+        NamedPipeServerStream server, int exitCode, string? reason, string? additionalContext = null)
+    {
+        var resp = new HookResponse
+        {
+            ExitCode = exitCode,
+            Reason = reason,
+            AdditionalContext = additionalContext,
+        };
+        var json = JsonSerializer.SerializeToUtf8Bytes(resp, ResponseJsonOptions);
+        await Framing.WriteFrameAsync(server, json).ConfigureAwait(false);
     }
 
     /// <summary>未起動なら daemon を detached 起動する（SessionStart 等から呼ぶ）。</summary>

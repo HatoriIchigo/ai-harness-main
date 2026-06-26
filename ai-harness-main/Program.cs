@@ -97,6 +97,11 @@ public static class Program
             }
             return ExitDeny;
         }
+        // 非ブロックのコンテキスト注入。client を介さない standalone は自身で hook 出力 JSON を stdout へ。
+        if (!string.IsNullOrEmpty(decision.AdditionalContext) && !string.IsNullOrEmpty(data.HookEventName))
+        {
+            Console.Out.Write(HookOutput.BuildAdditionalContext(data.HookEventName, decision.AdditionalContext));
+        }
         return ExitAllow;
     }
 }

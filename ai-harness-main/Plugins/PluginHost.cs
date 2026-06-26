@@ -3,7 +3,10 @@ using ai_harness_baselib;
 namespace ai_harness_main;
 
 /// <summary>集約後の最終判定。</summary>
-internal sealed record HostDecision(int ExitCode, string? Reason)
+/// <param name="ExitCode">0=許可／非0=deny。</param>
+/// <param name="Reason">deny 理由（集約）。</param>
+/// <param name="AdditionalContext">Claude へ注入する追加コンテキスト（集約、非ブロック）。無ければ null。</param>
+internal sealed record HostDecision(int ExitCode, string? Reason, string? AdditionalContext = null)
 {
     public bool IsDeny => ExitCode != 0;
 }
@@ -97,19 +100,30 @@ internal sealed class PluginHost
         return result;
     }
 
-    /// <summary>deny 先勝ち集約。1 つでも非 0 なら全体 deny。理由は連結。</summary>
+    /// <summary>
+    /// 集約。deny は先勝ち（1 つでも非 0 なら全体 deny、理由は連結）。
+    /// additionalContext は deny/allow を問わず全プラグイン分を連結し、非ブロックで Claude へ運ぶ。
+    /// </summary>
     private static HostDecision Aggregate(IEnumerable<PluginResult> results)
     {
-        var denied = results.Where(r => r.ExitCode != 0).ToList();
+        var list = results as IReadOnlyList<PluginResult> ?? results.ToList();
+
+        var context = string.Join(
+            "\n",
+            list.Select(r => r.AdditionalContext).Where(s => !string.IsNullOrWhiteSpace(s)));
+        var additionalContext = string.IsNullOrWhiteSpace(context) ? null : context;
+
+        var denied = list.Where(r => r.ExitCode != 0).ToList();
         if (denied.Count == 0)
         {
-            return new HostDecision(0, null);
+            return new HostDecision(0, null, additionalContext);
         }
 
         var reason = string.Join(
             "\n",
             denied.Select(r => r.Reason).Where(s => !string.IsNullOrWhiteSpace(s)));
 
-        return new HostDecision(2, string.IsNullOrWhiteSpace(reason) ? "プラグインにより拒否" : reason);
+        return new HostDecision(
+            2, string.IsNullOrWhiteSpace(reason) ? "プラグインにより拒否" : reason, additionalContext);
     }
 }
