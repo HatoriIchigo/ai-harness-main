@@ -80,7 +80,7 @@ public static class Program
         HostDecision decision;
         try
         {
-            var core = new HarnessCore(logger, config.PluginDir, config.MaxParallel);
+            var core = new HarnessCore(logger, config.PluginDir, config.MaxParallel, config.ToolToggles);
             decision = await core.RunAsync(data).ConfigureAwait(false);
         }
         catch (Exception ex)

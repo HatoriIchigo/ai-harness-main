@@ -7,3 +7,12 @@ logLevel: Info
 
 # プラグイン発火の同時実行数上限。0 または未指定で論理プロセッサ数。
 maxParallel: 0
+
+# 有効化するプラグイン。キーは各プラグインの PluginName、値は true/false。
+# true のみ有効化。false および未記載のプラグインは無効（一切発火しない）。
+# ここに書いた PluginName が lib に存在しない場合は起動失敗（エラー終了）。
+# 例:
+#   tools:
+#     - ai-harness-deny: true
+#     - ai-harness-inject: false
+tools: []

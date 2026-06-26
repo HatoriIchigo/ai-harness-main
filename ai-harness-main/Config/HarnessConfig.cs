@@ -28,6 +28,12 @@ internal sealed class HarnessConfig
     /// <summary>この閾値以上のレベルのログのみ出力する。</summary>
     public required LogLevel MinLogLevel { get; init; }
 
+    /// <summary>
+    /// プラグイン（PluginName）ごとの有効/無効。<c>config/main.yml</c> の <c>tools</c> から構築する。
+    /// <c>true</c> で有効化、<c>false</c> および未記載は無効。キーは各プラグインの <c>PluginName</c>。
+    /// </summary>
+    public required IReadOnlyDictionary<string, bool> ToolToggles { get; init; }
+
     public const string ConfigFileName = "main.yml";
 
     /// <summary>
@@ -43,6 +49,8 @@ internal sealed class HarnessConfig
 
         var minLogLevel = LogLevel.Info;
         var maxParallel = Environment.ProcessorCount;
+        // 既定は空＝全プラグイン無効（「書いていないときは off」）。
+        var toolToggles = new Dictionary<string, bool>(StringComparer.Ordinal);
 
         var configPath = Path.Combine(configDir, ConfigFileName);
         if (File.Exists(configPath))
@@ -68,6 +76,18 @@ internal sealed class HarnessConfig
                     {
                         maxParallel = mp;
                     }
+
+                    // tools: 各要素は { PluginName: true/false } の単一エントリマップ。重複キーは後勝ち。
+                    if (model.Tools is { } tools)
+                    {
+                        foreach (var entry in tools)
+                        {
+                            foreach (var kv in entry)
+                            {
+                                toolToggles[kv.Key] = kv.Value;
+                            }
+                        }
+                    }
                 }
             }
             catch (Exception ex)
@@ -83,6 +103,7 @@ internal sealed class HarnessConfig
             RunDir = Path.Combine(baseDir, "run"),
             MaxParallel = maxParallel,
             MinLogLevel = minLogLevel,
+            ToolToggles = toolToggles,
         };
     }
 
@@ -91,5 +112,8 @@ internal sealed class HarnessConfig
     {
         public string? LogLevel { get; set; }
         public int? MaxParallel { get; set; }
+
+        /// <summary>各要素は <c>{ PluginName: true/false }</c> の単一エントリマップ。</summary>
+        public List<Dictionary<string, bool>>? Tools { get; set; }
     }
 }

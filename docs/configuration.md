@@ -24,16 +24,37 @@ logLevel: Info
 
 # プラグイン発火の同時実行数上限。0 または未指定で論理プロセッサ数。
 maxParallel: 0
+
+# 有効化するプラグイン。キーは各プラグインの PluginName、値は true/false。
+tools:
+  - ai-harness-deny: true
+  - ai-harness-inject: false
 ```
 
 | キー | 既定値 | 説明 |
 |---|---|---|
 | `logLevel` | `Info` | この閾値以上のレベルのみ出力（`Trace < Debug < Info < Warning < Error`） |
 | `maxParallel` | 論理プロセッサ数 | プラグイン並列発火の同時数上限。`0`／未指定／不正値で既定 |
+| `tools` | （空＝全 off） | プラグインごとの有効/無効。単一エントリマップのリスト。下記参照 |
 
 - ファイルが**欠落・破損**しても既定値で起動する（警告ログを 1 行出す）。
 - 未知のキーは無視される（前方互換）。
 - 値の解釈: `logLevel` は大文字小文字を区別しない。`maxParallel` は 0 以下を既定へフォールバック。
+
+### tools（プラグインの有効化）
+
+`lib/` に導入したプラグインを **PluginName** 単位で個別に on/off する。キーは各プラグインの `PluginName`（DLL 名でも AssemblyName でもなく、`PluginBase.PluginName` の値）。
+
+- `true` のプラグインのみ有効化。起動時にログへ `<PluginName>: 起動しました` を記録する。
+- `false` および**未記載**のプラグインは無効（一切発火しない）。`tools` セクション自体が無い／空なら**全プラグインが off**。
+- `tools` に書いた PluginName が `lib/` に存在しない場合は**起動失敗（エラー終了）**。daemon はログにエラーを残して終了、standalone は exit 1。タイプミスや配置漏れを早期に検出する。
+
+```yaml
+tools:
+  - ai-harness-deny: true      # 有効化（起動ログを出す）
+  - ai-harness-inject: false   # 無効（除外）
+  # 記載しないプラグインも無効
+```
 
 ## プラグインの設定ファイル
 

@@ -35,7 +35,17 @@ internal static class Daemon
 
         try
         {
-            var core = new HarnessCore(logger, config.PluginDir, config.MaxParallel);
+            HarnessCore core;
+            try
+            {
+                core = new HarnessCore(logger, config.PluginDir, config.MaxParallel, config.ToolToggles);
+            }
+            catch (Exception ex)
+            {
+                // 設定エラー（tools にあって lib に無い等）は起動失敗として終了。
+                logger.Write(LogLevel.Error, $"daemon 起動失敗（設定エラー）: {ex.Message}");
+                return 1;
+            }
             var pipeName = HarnessPipe.Name();
             logger.Write(LogLevel.Info, $"daemon 起動 pipe={pipeName} plugins={core.PluginCount}");
 
