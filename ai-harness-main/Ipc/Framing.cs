@@ -1,7 +1,7 @@
 namespace ai_harness_main;
 
 /// <summary>
-/// 長さ前置（int32 LE）フレーミング。client と同一仕様（client 側に複製あり）。
+/// 長さ前置（int32 LE）フレーミング。bridge と daemon 間のパイプ送受で共通利用する。
 /// </summary>
 internal static class Framing
 {

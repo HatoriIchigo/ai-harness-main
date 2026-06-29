@@ -3,16 +3,17 @@ using ai_harness_baselib;
 namespace ai_harness_main;
 
 /// <summary>
-/// ai-harness-main エントリポイント。モードで分岐する。
+/// ai-harness-main エントリポイント（単一バイナリ）。モードで分岐する。
 ///
-///   （引数なし） … standalone。stdin の hook JSON を1件処理して終了（client 不要の直接実行・テスト用）。
-///   --daemon     … 常駐。名前付きパイプで接続を待ち受け、接続ごとに処理。
-///   --ensure     … daemon 未起動なら detached 起動して終了（SessionStart 等から）。
+///   （引数なし） … bridge。hook ごとに Claude Code が叩く受け口。stdin の hook JSON を読み、cwd から
+///                  プロジェクトルートを解決し、封筒で daemon へ中継する。未起動なら daemon を起動。
+///   --daemon     … 常駐サーバー。名前付きパイプで待ち受け、プロジェクト別に処理。複数プロジェクト共有。
+///   --ensure     … daemon 未起動なら detached 起動して終了。
 ///   --stop       … 稼働中の daemon を停止。
-///   --restart    … 稼働中の daemon を停止してから再起動（プラグイン DLL・config の変更反映用）。
+///   --restart    … daemon を停止してから再起動（lib＝プラグイン DLL の差し替え反映用）。
+///   --standalone … daemon を介さず stdin を直接 1 件処理して終了（テスト・フォールバック）。
 ///
-/// 終了コード（standalone / Claude hook 規約）: 0=許可 / 2=deny / 1=内部エラー（非ブロッキング）。
-/// 常駐時の hook 応答は client が中継する。ログは logs/&lt;日付&gt;.jsonl に集約。
+/// 終了コード（bridge / standalone の Claude hook 規約）: 0=許可 / 2=deny / 1=内部エラー（非ブロッキング）。
 /// </summary>
 public static class Program
 {
@@ -22,20 +23,15 @@ public static class Program
 
     public static async Task<int> Main(string[] args)
     {
-        var config = HarnessConfig.Load(out var configWarning);
         var mode = args.Length > 0 ? args[0] : null;
 
         switch (mode)
         {
             case "--daemon":
             {
-                // 常駐時は stderr に消費者がいないためファイルのみへ出力。
-                var logger = new Logger(config.MinLogLevel, toStderr: false);
-                if (configWarning is not null)
-                {
-                    logger.Write(LogLevel.Warning, configWarning);
-                }
-                return await Daemon.RunAsync(config, logger).ConfigureAwait(false);
+                // 常駐時は stderr に消費者がいないためファイルのみへ出力（グローバル log）。
+                var logger = new Logger(LogLevel.Info, InstallPaths.GlobalLogDir, toStderr: false);
+                return await Daemon.RunAsync(logger).ConfigureAwait(false);
             }
 
             case "--ensure":
@@ -47,19 +43,18 @@ public static class Program
             case "--restart":
                 return Daemon.Restart();
 
+            case "--standalone":
+                return await RunStandaloneAsync().ConfigureAwait(false);
+
             default:
-                return await RunStandaloneAsync(config, configWarning).ConfigureAwait(false);
+                return await Bridge.RunAsync().ConfigureAwait(false);
         }
     }
 
-    /// <summary>client を介さず stdin を直接1件処理する（テスト・フォールバック用）。</summary>
-    private static async Task<int> RunStandaloneAsync(HarnessConfig config, string? configWarning)
+    /// <summary>daemon を介さず stdin を直接 1 件処理する（テスト・フォールバック用）。</summary>
+    private static async Task<int> RunStandaloneAsync()
     {
-        var logger = new Logger(config.MinLogLevel);
-        if (configWarning is not null)
-        {
-            logger.Write(LogLevel.Warning, configWarning);
-        }
+        var projectRoot = ProjectLocator.Resolve(Environment.CurrentDirectory);
 
         HookData data;
         try
@@ -69,35 +64,37 @@ public static class Program
         }
         catch (Exception ex)
         {
-            logger.Write(LogLevel.Error, $"hook データの解析に失敗: {ex.Message}");
+            await Console.Error.WriteLineAsync($"hook データの解析に失敗: {ex.Message}").ConfigureAwait(false);
             return ExitInternalError;
         }
 
-        logger.Write(LogLevel.Debug,
-            $"config pluginDir={config.PluginDir} parallel={config.MaxParallel} logLevel={config.MinLogLevel}");
-        logger.Write(LogLevel.Debug, data.ToNonNullJson());
-
         HostDecision decision;
+        ProjectContext? ctx = null;
         try
         {
-            var core = new HarnessCore(logger, config.PluginDir, config.MaxParallel, config.ToolToggles);
-            decision = await core.RunAsync(data).ConfigureAwait(false);
+            var registry = new PluginRegistry(_ => { }, InstallPaths.LibDir);
+            ctx = ProjectContext.Create(registry, _ => { }, projectRoot);
+            decision = await ctx.RunAsync(data).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
-            logger.Write(LogLevel.Error, $"処理に失敗: {ex.Message}");
+            await Console.Error.WriteLineAsync($"処理に失敗: {ex.Message}").ConfigureAwait(false);
             return ExitInternalError;
+        }
+        finally
+        {
+            ctx?.Dispose();
         }
 
         if (decision.IsDeny)
         {
             if (!string.IsNullOrWhiteSpace(decision.Reason))
             {
-                Console.Error.WriteLine(decision.Reason);
+                await Console.Error.WriteLineAsync(decision.Reason).ConfigureAwait(false);
             }
             return ExitDeny;
         }
-        // 非ブロックのコンテキスト注入。client を介さない standalone は自身で hook 出力 JSON を stdout へ。
+        // 非ブロックのコンテキスト注入。standalone は自身で hook 出力 JSON を stdout へ。
         if (!string.IsNullOrEmpty(decision.AdditionalContext) && !string.IsNullOrEmpty(data.HookEventName))
         {
             Console.Out.Write(HookOutput.BuildAdditionalContext(data.HookEventName, decision.AdditionalContext));

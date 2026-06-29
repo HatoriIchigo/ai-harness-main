@@ -6,7 +6,7 @@ namespace ai_harness_main;
 
 /// <summary>
 /// Claude Code の hook 出力 JSON（<c>hookSpecificOutput.additionalContext</c>）を組み立てる。
-/// 非ブロックのコンテキスト注入用。client 側に同一定義の複製がある。
+/// 非ブロックのコンテキスト注入用。bridge が応答受信時に stdout へ出力する。
 /// </summary>
 internal static class HookOutput
 {

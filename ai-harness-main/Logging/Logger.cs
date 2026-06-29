@@ -23,12 +23,15 @@ internal sealed class Logger
     private readonly string _logDir;
     private readonly object _fileLock = new();
 
+    /// <param name="minLevel">出力閾値。</param>
+    /// <param name="logDir">ログファイルの出力先ディレクトリ（プロジェクト個別の
+    /// <c>&lt;ルート&gt;/.claude/harness/logs</c>、または daemon ライフサイクル用のグローバル log）。</param>
     /// <param name="toStderr">stderr へも出すか。daemon 常駐時は false（stderr に消費者がいないため）。</param>
-    public Logger(LogLevel minLevel, bool toStderr = true)
+    public Logger(LogLevel minLevel, string logDir, bool toStderr = true)
     {
         _minLevel = minLevel;
         _toStderr = toStderr;
-        _logDir = Path.Combine(AppContext.BaseDirectory, "logs");
+        _logDir = logDir;
     }
 
     /// <summary>

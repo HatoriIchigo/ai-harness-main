@@ -1,6 +1,6 @@
 # プラグイン開発ガイド
 
-新しい拡張プラグインを作成し、ハーネスへ組み込むまでの流れ。プラグインは `ai-harness-baselib` の `PluginBase` を継承した DLL として実装し、`lib/` に配置する。`ai-harness-main` は参照しない。
+新しい拡張プラグインを作成し、ハーネスへ組み込むまでの流れ。プラグインは `ai-harness-baselib` の `PluginBase` を継承した DLL として実装し、インストール先の `lib/`（全プロジェクト共有）に配置する。`ai-harness-main` は参照しない。設定 YAML は各プロジェクトの `.claude/harness/config/` に置く。
 
 ## 全体の流れ
 
@@ -10,8 +10,9 @@
 3. PluginBase を継承して実装
 4. 設定ファイル（YAML）を用意
 5. ビルドして DLL を生成
-6. DLL を lib/、YAML を config/ へ配置
-7. daemon を --restart で再起動して反映
+6. DLL を <インストール先>/lib/ へ配置（共有）
+7. プロジェクトの .claude/harness/config/ へ YAML を配置し、common.yml の tools で有効化
+8. daemon を --restart で再起動して新 DLL を反映（YAML の変更はホットリロードで反映）
 ```
 
 ## 1. プロジェクト作成と csproj
@@ -60,10 +61,10 @@ public sealed class MyPlugin : PluginBase
     // 発火条件（後述）。ここでは Bash ツールのみ対象
     public override IReadOnlyList<string> Tools => new[] { "Bash" };
 
-    // 設定ファイル名（必須）。config/<この名前> を読む
+    // 設定ファイル名（必須）。プロジェクトの .claude/harness/config/<この名前> を読む
     public override string ConfigName => "my-plugin.yml";
 
-    // 起動時に1度だけ実行（daemon 寿命で1回）
+    // プロジェクト初回アクセス時に1度だけ実行（設定ホットリロード時にも再実行）
     public override IEnumerable<LogEntry> Init()
     {
         yield return LogEntry.Info("初期化");
@@ -131,14 +132,14 @@ yield return LogEntry.Warning("警告");
 yield return LogEntry.Error("エラー");
 ```
 
-`LogLevel` は `Trace < Debug < Info < Warning < Error`。`config/main.yml` の `logLevel` 閾値以上のみが `logs/<日付>.jsonl` に出力される。
+`LogLevel` は `Trace < Debug < Info < Warning < Error`。プロジェクトの `common.yml` の `logLevel` 閾値以上のみが `.claude/harness/logs/<日付>.jsonl` に出力される。
 
 ## 3. 設定ファイル（必須）
 
-`ConfigName` は必須。宣言したら**同名の YAML を `config/` に置く**こと。ファイルが無い／読めないとそのプラグインは起動時に無効化される（フェイルクローズ）。設定値が不要でも空ファイルを置けば空マッピングとして扱われる。
+`ConfigName` は必須。宣言したら**同名の YAML をプロジェクトの `.claude/harness/config/` に置く**こと。ファイルが無い／読めないとそのプラグインはそのプロジェクトで無効化される（フェイルクローズ）。設定値が不要でも空ファイルを置けば空マッピングとして扱われる。
 
 ```yaml
-# config/my-plugin.yml
+# .claude/harness/config/my-plugin.yml
 marker: "DENYME"
 ```
 
@@ -149,27 +150,28 @@ marker: "DENYME"
 ```sh
 dotnet build sample-plugins/MyPlugin/MyPlugin.csproj -c Release
 
-# 生成された DLL を lib/ へ、設定 YAML を config/ へ
-cp sample-plugins/MyPlugin/bin/Release/net10.0/MyPlugin.dll  <配置先>/lib/
-cp config/my-plugin.yml                                       <配置先>/config/
+# 生成された DLL を共有 lib/ へ、設定 YAML はプロジェクトの config/ へ
+cp sample-plugins/MyPlugin/bin/Release/net10.0/MyPlugin.dll  <インストール先>/lib/
+cp my-plugin.yml                                             <プロジェクト>/.claude/harness/config/
 
-# daemon を再起動して反映
-<配置先>/ai-harness-main --restart
+# common.yml の tools で有効化（- MyPlugin: true）した上で、新 DLL を反映
+ai-harness-main --restart
 ```
 
-詳細なビルド・発行手順は [build-and-deploy.md](build-and-deploy.md) を参照。
+DLL を差し替えたときだけ `--restart`。`common.yml`・各プラグイン YAML の変更はホットリロードで反映される。詳細なビルド・発行手順は [build-and-deploy.md](build-and-deploy.md) を参照。
 
 ## 動作確認
 
-standalone モードなら daemon を介さず単体で叩ける（hook JSON を stdin へ）。
+`--standalone` なら daemon を介さず単体で叩ける（hook JSON を stdin へ）。`.claude/harness/config` を持つプロジェクト内（cwd がその配下）で実行する。
 
 ```sh
+cd <プロジェクト>
 echo '{"hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"echo DENYME"}}' \
-  | <配置先>/ai-harness-main
+  | ai-harness-main --standalone
 echo "exit=$?"   # deny なら 2
 ```
 
-ログは `logs/<yyyy-MM-dd>.jsonl` に集約される。発火しない場合は発火条件（`Tools`/`Events`）と設定ファイルの配置を確認する。
+ログは `.claude/harness/logs/<yyyy-MM-dd>.jsonl` に集約される。発火しない場合は発火条件（`Tools`/`Events`）・`common.yml` の有効化・設定ファイルの配置を確認する。
 
 ## 参考実装
 

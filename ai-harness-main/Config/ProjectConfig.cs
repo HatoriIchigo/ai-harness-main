@@ -5,22 +5,23 @@ using YamlDotNet.Serialization.NamingConventions;
 namespace ai_harness_main;
 
 /// <summary>
-/// ハーネスの実行設定。ディレクトリは実行体からの相対で固定（環境変数では変更しない）。
-/// 可変設定（ログレベル・並列数）は <c>config/main.yml</c> からロードする。
-/// 構成は ai-harness-main/README.md に準拠:
-///   &lt;実行体ディレクトリ&gt;/lib    … 拡張プラグイン
-///   &lt;実行体ディレクトリ&gt;/config … 設定ファイル（main.yml）
+/// プロジェクト個別の実行設定。プロジェクトルート（<c>.claude</c> を含むディレクトリ）配下の
+/// <c>.claude/harness/config/common.yml</c> からロードする。単一 daemon が複数プロジェクトをさばくため、
+/// 設定・ログは実行体ではなくプロジェクトごとに分離する。
+///
+///   &lt;ルート&gt;/.claude/harness/config/  … common.yml ＋ 各プラグイン YAML
+///   &lt;ルート&gt;/.claude/harness/logs/    … 統合ログ（&lt;yyyy-MM-dd&gt;.jsonl）
 /// </summary>
-internal sealed class HarnessConfig
+internal sealed class ProjectConfig
 {
-    /// <summary>プラグイン DLL を走査する固定フォルダ（実行体隣の <c>lib/</c>）。</summary>
-    public required string PluginDir { get; init; }
+    /// <summary>プロジェクトルート（<c>.claude</c> を含む階層の絶対パス）。</summary>
+    public required string ProjectRoot { get; init; }
 
-    /// <summary>設定ファイル置き場の固定フォルダ（実行体隣の <c>config/</c>）。</summary>
+    /// <summary>設定ファイル置き場（<c>&lt;ルート&gt;/.claude/harness/config</c>）。</summary>
     public required string ConfigDir { get; init; }
 
-    /// <summary>daemon の作業領域（実行体隣の <c>run/</c>。ロックファイル等）。</summary>
-    public required string RunDir { get; init; }
+    /// <summary>ログ出力先（<c>&lt;ルート&gt;/.claude/harness/logs</c>）。</summary>
+    public required string LogDir { get; init; }
 
     /// <summary>プラグイン発火の同時実行数上限。</summary>
     public required int MaxParallel { get; init; }
@@ -29,23 +30,27 @@ internal sealed class HarnessConfig
     public required LogLevel MinLogLevel { get; init; }
 
     /// <summary>
-    /// プラグイン（PluginName）ごとの有効/無効。<c>config/main.yml</c> の <c>tools</c> から構築する。
-    /// <c>true</c> で有効化、<c>false</c> および未記載は無効。キーは各プラグインの <c>PluginName</c>。
+    /// プラグイン（PluginName）ごとの有効/無効。<c>common.yml</c> の <c>tools</c> から構築する。
+    /// <c>true</c> で有効化、<c>false</c> および未記載は無効。
     /// </summary>
     public required IReadOnlyDictionary<string, bool> ToolToggles { get; init; }
 
-    public const string ConfigFileName = "main.yml";
+    public const string ConfigFileName = "common.yml";
+
+    /// <summary>このプロジェクトの設定ファイル（<c>common.yml</c>）の絶対パス。</summary>
+    public string ConfigFilePath => Path.Combine(ConfigDir, ConfigFileName);
 
     /// <summary>
-    /// 実行体ディレクトリ基準で固定構成を生成し、<c>config/main.yml</c> から可変設定を上書きする。
-    /// 設定ファイルが無い・壊れている場合は既定値（logLevel=Info, maxParallel=論理プロセッサ数）。
+    /// プロジェクトルート基準で固定構成を生成し、<c>common.yml</c> から可変設定を上書きする。
+    /// 設定ファイルが無い・壊れている場合は既定値（logLevel=Info, maxParallel=論理プロセッサ数, プラグイン全 off）。
     /// </summary>
-    public static HarnessConfig Load(out string? configWarning)
+    public static ProjectConfig Load(string projectRoot, out string? configWarning)
     {
         configWarning = null;
 
-        var baseDir = AppContext.BaseDirectory;
-        var configDir = Path.Combine(baseDir, "config");
+        var harnessDir = Path.Combine(projectRoot, InstallPaths.HarnessSubdir);
+        var configDir = Path.Combine(harnessDir, "config");
+        var logDir = Path.Combine(harnessDir, "logs");
 
         var minLogLevel = LogLevel.Info;
         var maxParallel = Environment.ProcessorCount;
@@ -62,7 +67,7 @@ internal sealed class HarnessConfig
                     .WithNamingConvention(CamelCaseNamingConvention.Instance)
                     .IgnoreUnmatchedProperties()
                     .Build();
-                var model = deserializer.Deserialize<MainYaml>(yaml);
+                var model = deserializer.Deserialize<CommonYaml>(yaml);
 
                 if (model is not null)
                 {
@@ -96,19 +101,19 @@ internal sealed class HarnessConfig
             }
         }
 
-        return new HarnessConfig
+        return new ProjectConfig
         {
-            PluginDir = Path.Combine(baseDir, "lib"),
+            ProjectRoot = projectRoot,
             ConfigDir = configDir,
-            RunDir = Path.Combine(baseDir, "run"),
+            LogDir = logDir,
             MaxParallel = maxParallel,
             MinLogLevel = minLogLevel,
             ToolToggles = toolToggles,
         };
     }
 
-    /// <summary>config/main.yml のデシリアライズ用 DTO。</summary>
-    private sealed class MainYaml
+    /// <summary>common.yml のデシリアライズ用 DTO。</summary>
+    private sealed class CommonYaml
     {
         public string? LogLevel { get; set; }
         public int? MaxParallel { get; set; }

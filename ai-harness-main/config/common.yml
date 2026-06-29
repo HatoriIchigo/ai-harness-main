@@ -1,5 +1,7 @@
-# ai-harness-main 設定ファイル
-# 配置先: <実行体ディレクトリ>/config/main.yml
+# ai-harness プロジェクト個別設定ファイル
+# 配置先: <プロジェクトルート>/.claude/harness/config/common.yml
+# 単一の共有 daemon が、このファイルでプロジェクトごとに挙動を決める。
+# 各種 YAML はホットリロード対象（保存すると daemon が当該プロジェクトを再構築）。
 
 # 診断ログの出力閾値。これ未満のレベルは破棄。
 # 指定可能: Trace / Debug / Info / Warning / Error
@@ -10,7 +12,7 @@ maxParallel: 0
 
 # 有効化するプラグイン。キーは各プラグインの PluginName、値は true/false。
 # true のみ有効化。false および未記載のプラグインは無効（一切発火しない）。
-# ここに書いた PluginName が lib に存在しない場合は起動失敗（エラー終了）。
+# ここに書いた PluginName が lib（共有）に存在しない場合は、当該プロジェクトでは無視（エラーログのみ）。
 # 例:
 #   tools:
 #     - ai-harness-deny: true

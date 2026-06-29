@@ -19,11 +19,14 @@ internal sealed class PluginHost
 {
     private readonly Action<LogEntry> _log;
     private readonly int _maxParallel;
+    private readonly string _configDir;
 
-    public PluginHost(Action<LogEntry> log, int maxParallel)
+    /// <param name="configDir">このプロジェクトの設定ディレクトリ。各プラグインの <c>LoadConfig</c> に渡す。</param>
+    public PluginHost(Action<LogEntry> log, int maxParallel, string configDir)
     {
         _log = log;
         _maxParallel = Math.Max(1, maxParallel);
+        _configDir = configDir;
     }
 
     public async Task<HostDecision> RunAsync(
@@ -83,9 +86,9 @@ internal sealed class PluginHost
         try
         {
             // 設定をこのインスタンスへロード（Action から Config を参照可能にする）。
-            // 起動時に HarnessCore が検証済みのため通常成功。失敗はフェイルオープン（ログのみ）。
-            plugin.LoadConfig();
-            // Init は HarnessCore が起動時に型ごと1回実行済み。ここでは Action のみ。
+            // 起動時に ProjectContext が検証済みのため通常成功。失敗はフェイルオープン（ログのみ）。
+            plugin.LoadConfig(_configDir);
+            // Init は ProjectContext がプロジェクトごとに1回実行済み。ここでは Action のみ。
             // 列挙完了で result.ExitCode が確定。
             foreach (var entry in plugin.Action(data, result))
             {
