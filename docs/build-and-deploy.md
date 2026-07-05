@@ -95,7 +95,9 @@ cp <plugin>.yml                                       <プロジェクト>/.clau
 
 > **tree-sitter ネイティブ**（constants／file-rules が使う `tree-sitter-*.dll`）は `lib/` ではなく**実行体隣の `runtimes/<rid>/native/`** に置く。TreeSitter.DotNet が grammar を「ベア名」で `NativeLibrary.Load` するため `.deps.json`／ALC のネイティブ解決を経由せず、OS 既定探索（実行体ディレクトリ・system・PATH）に無いと `DllNotFoundException` になる。host（`ai-harness-main`）は daemon／standalone 起動時に `runtimes/<現在の RID>/native/` の各ファイルをフルパスで事前ロードし、以降のベア名ロードを OS の既ロード解決に委ねる（PATH や探索パスは変更しない）。
 >
-> **配布方針**: この native は特定プラグイン専用ではなく汎用（どの tree-sitter プラグインでも同一）なので、**host のリリース zip に `runtimes/<rid>/native/` として同梱**する。プラグインの配布物は `lib/` のマネージド DLL のみ（native を含めない）。よってエンドユーザは host を展開しプラグイン DLL を `lib/` へ置くだけでよく、runtimes を別途用意する必要はない。host に同梱する native のバージョンは、プラグインが参照する `TreeSitter.dll`（現状 `TreeSitter.DotNet 1.3.0`）と一致させる。
+> **配布方針**: この native は特定プラグイン専用ではなく汎用（どの tree-sitter プラグインでも同一）なので、**host のリリース zip に `runtimes/<rid>/native/` として同梱**する。tree-sitter プラグインの配布物は `lib/` のマネージド DLL のみ（native を含めない）。よってエンドユーザは host を展開しプラグイン DLL を `lib/` へ置くだけでよく、runtimes を別途用意する必要はない。host に同梱する native のバージョンは、プラグインが参照する `TreeSitter.dll`（現状 `TreeSitter.DotNet 1.3.0`）と一致させる。
+>
+> **これは tree-sitter 固有の例外措置**（ベア名ロードのため host 事前ロードが必須）であり、他の native 依存プラグインには適用しない。tree-sitter 以外で native を使うプラグインは、**自分の native を `lib/` 側に同梱**し（プラグイン出力の `runtimes/<rid>/native/` を `lib/` 配下へ）、`.deps.json` 経由で ALC（`PluginLoadContext.LoadUnmanagedDll` → `AssemblyDependencyResolver`）が **per-plugin で解決**する。host はそれらを同梱・事前ロードしない。
 
 ## Claude Code への配線（settings.json）
 

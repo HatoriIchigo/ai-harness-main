@@ -64,7 +64,12 @@ public static class Program
     /// OS が既ロードのモジュールを返す。PATH や探索パスを一切変更せず、アプリが自分の同梱ネイティブを
     /// 明示的にロードするだけ。プラグインを動かすモード（daemon／standalone）で発火前に一度呼ぶ。
     ///
-    /// 解決不能は無視（fail-open）。ロードできなかった grammar を使うプラグインは AST 解析に失敗し素通りする。
+    /// この実行体隣の <c>runtimes/</c> には**方針上 tree-sitter の native のみ**を置く（ベア名ロードのための
+    /// 例外措置）。tree-sitter 以外で native を使うプラグインはここへ入れず、自分の native を <c>lib/</c> 側に
+    /// 同梱し <c>.deps.json</c> 経由で ALC（<see cref="PluginLoadContext"/>）が per-plugin 解決する。
+    ///
+    /// 個々のロード失敗はここでは無視して daemon 起動自体は止めない。ただし当該 grammar を使う tree-sitter
+    /// プラグインは実行時に AST 解析へ失敗し、フェイルクローズで当該アクションがブロックされる。
     /// </summary>
     private static void PreloadNativeLibraries()
     {
