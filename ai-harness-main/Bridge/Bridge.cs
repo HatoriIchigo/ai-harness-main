@@ -32,6 +32,13 @@ internal static class Bridge
             stdin = ms.ToArray();
         }
 
+        // 先頭 UTF-8 BOM を除去（Claude Code は付けないが、ラッパー経由で混入すると
+        // U+FEFF が残り daemon 側の JSON パースが '0xEF invalid start of value' で失敗する）。
+        if (stdin is [0xEF, 0xBB, 0xBF, ..])
+        {
+            stdin = stdin[3..];
+        }
+
         var hookJson = Encoding.UTF8.GetString(stdin);
         var hookEventName = ExtractHookEventName(stdin);
         var projectRoot = ProjectLocator.Resolve(Environment.CurrentDirectory);

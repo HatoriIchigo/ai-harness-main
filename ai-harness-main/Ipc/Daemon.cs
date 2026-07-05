@@ -176,7 +176,9 @@ internal static class Daemon
             catch (Exception ex)
             {
                 globalLog.Write(LogLevel.Error, $"hook 処理失敗: {ex.Message}");
-                decision = new HostDecision(1, null); // 内部エラー → fail-open
+                // 内部エラーはブロックしない（fail-open）。HostDecision.IsDeny は ExitCode!=0 で真になるため、
+                // ここは必ず ExitCode=0 にする（非 0 だと :182 の IsDeny?2:0 で 2＝ブロックになってしまう）。
+                decision = new HostDecision(0, null);
             }
 
             await RespondAsync(server, decision.IsDeny ? 2 : 0, decision.Reason, decision.AdditionalContext)
@@ -347,15 +349,33 @@ internal static class Daemon
     public static void StartDetached()
     {
         var exe = Environment.ProcessPath!; // ai-harness-main 自身
-        var psi = new ProcessStartInfo(exe, "--daemon")
+        ProcessStartInfo psi;
+        if (OperatingSystem.IsWindows())
         {
-            UseShellExecute = false,
-            CreateNoWindow = true,
-            // hook の stdio を握らないよう切り離す（握ると Claude が hook 完了待ちでハングし得る）。
-            RedirectStandardInput = true,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-        };
+            // Windows では UseShellExecute=false ＋ Redirect にすると CreateProcess が bInheritHandles=TRUE で
+            // 起動され、daemon が bridge の**継承可能な全ハンドル**（＝Claude とつながる bridge の stdout パイプ）
+            // まで継承してしまう。すると bridge が終了しても daemon がその書き込み端を握り続け、Claude は hook の
+            // stdout EOF を受け取れず**ハングする**。ShellExecuteEx はハンドルを一切継承しないため、これで確実に
+            // 親（Claude）の stdio から切り離す。daemon はログをファイルに書く（Console 非依存）ので stdio 不要。
+            psi = new ProcessStartInfo(exe, "--daemon")
+            {
+                UseShellExecute = true,
+                WindowStyle = ProcessWindowStyle.Hidden,
+            };
+        }
+        else
+        {
+            // 非 Windows（posix_spawn）は明示 dup した fd のみ引き継ぎ広域継承は起きないため、
+            // daemon の stdio を親と切り離してリダイレクトすれば足りる。
+            psi = new ProcessStartInfo(exe, "--daemon")
+            {
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                RedirectStandardInput = true,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+            };
+        }
         Process.Start(psi);
     }
 }

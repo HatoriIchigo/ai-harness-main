@@ -67,7 +67,8 @@ dotnet publish ai-harness-main\ai-harness-main\ai-harness-main.csproj `
 ```
 <インストール先>/               実行体と共有資産（全プロジェクト共通）
 ├── ai-harness-main(.exe)       単一バイナリ（bridge／daemon／standalone）
-├── lib/                        共有プラグイン（*.dll）
+├── lib/                        共有プラグイン（*.dll。マネージド依存 TreeSitter.dll 等も同居）
+├── runtimes/                   tree-sitter ネイティブ grammar（<rid>/native/*.dll）。host が起動時に事前ロード
 ├── run/                        daemon 作業領域（daemon.lock、自動生成）
 └── logs/                       daemon ライフサイクルログ（自動生成）
 
@@ -91,6 +92,8 @@ cp <plugin>.yml                                       <プロジェクト>/.clau
 ```
 
 > `lib/` には**プラグイン DLL のみ**を置く。`ai-harness-baselib.dll` は host が共有ロードするため置かない（プラグインの csproj 側で `<Private>false</Private>` と `CopyLocalLockFileAssemblies=false` を指定して出力から除外する）。loader も `ai-harness-baselib` という名前の DLL はスキップする。
+
+> **tree-sitter ネイティブ**（constants／file-rules が使う `tree-sitter-*.dll`）は `lib/` ではなく**実行体隣の `runtimes/<rid>/native/`** に置く。TreeSitter.DotNet が grammar を「ベア名」で `NativeLibrary.Load` するため `.deps.json`／ALC のネイティブ解決を経由せず、OS 既定探索（実行体ディレクトリ・system・PATH）に無いと `DllNotFoundException` になる。host（`ai-harness-main`）は daemon／standalone 起動時に `runtimes/<現在の RID>/native/` の各ファイルをフルパスで事前ロードし、以降のベア名ロードを OS の既ロード解決に委ねる（PATH や探索パスは変更しない）。
 
 ## Claude Code への配線（settings.json）
 

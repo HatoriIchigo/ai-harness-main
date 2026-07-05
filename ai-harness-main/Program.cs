@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using ai_harness_baselib;
 
 namespace ai_harness_main;
@@ -29,6 +30,7 @@ public static class Program
         {
             case "--daemon":
             {
+                PreloadNativeLibraries();
                 // 常駐時は stderr に消費者がいないためファイルのみへ出力（グローバル log）。
                 var logger = new Logger(LogLevel.Info, InstallPaths.GlobalLogDir, toStderr: false);
                 return await Daemon.RunAsync(logger).ConfigureAwait(false);
@@ -51,9 +53,44 @@ public static class Program
         }
     }
 
+    /// <summary>
+    /// 実行体隣の <c>runtimes/&lt;rid&gt;/native</c> にあるネイティブライブラリをフルパスで事前ロードする。
+    ///
+    /// tree-sitter を使うプラグイン（constants／file-rules）が依存する TreeSitter.DotNet は、grammar を
+    /// <c>NativeLibrary.Load(ベア名)</c> で読み込む。これは ALC のネイティブ解決フックも <c>.deps.json</c>
+    /// リゾルバも通らず、OS 既定探索（実行体ディレクトリ・system・PATH）だけが効くため、それらに含まれない
+    /// 配置では <c>DllNotFoundException</c> になる。先にフルパスでロードしておけば、以降のベア名ロードは
+    /// OS が既ロードのモジュールを返す。PATH や探索パスを一切変更せず、アプリが自分の同梱ネイティブを
+    /// 明示的にロードするだけ。プラグインを動かすモード（daemon／standalone）で発火前に一度呼ぶ。
+    ///
+    /// 解決不能は無視（fail-open）。ロードできなかった grammar を使うプラグインは AST 解析に失敗し素通りする。
+    /// </summary>
+    private static void PreloadNativeLibraries()
+    {
+        var nativeDir = Path.Combine(
+            AppContext.BaseDirectory, "runtimes", RuntimeInformation.RuntimeIdentifier, "native");
+        if (!Directory.Exists(nativeDir))
+        {
+            return;
+        }
+
+        foreach (var file in Directory.EnumerateFiles(nativeDir))
+        {
+            try
+            {
+                NativeLibrary.Load(file);
+            }
+            catch
+            {
+                // 個別の解決失敗はブロックしない（当該プラグインが素通りするだけ）。
+            }
+        }
+    }
+
     /// <summary>daemon を介さず stdin を直接 1 件処理する（テスト・フォールバック用）。</summary>
     private static async Task<int> RunStandaloneAsync()
     {
+        PreloadNativeLibraries();
         var projectRoot = ProjectLocator.Resolve(Environment.CurrentDirectory);
 
         HookData data;
