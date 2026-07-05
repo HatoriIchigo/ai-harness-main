@@ -1,3 +1,4 @@
+using System.Text.Json.Nodes;
 using ai_harness_baselib;
 
 namespace ai_harness_main;
@@ -10,6 +11,15 @@ internal sealed record HostDecision(int ExitCode, string? Reason, string? Additi
 {
     public bool IsDeny => ExitCode != 0;
 }
+
+/// <summary>
+/// 1 リクエストの発火結果。deny 判定（<see cref="Decision"/>）と、各プラグインが返した
+/// state スライス（PluginName → 新しい値。返さなかった／変更なしのプラグインは含まない）。
+/// </summary>
+/// <param name="Decision">deny 先勝ちで集約した最終判定。</param>
+/// <param name="StateUpdates">名前空間ごとの state 更新。<see cref="StateStore.ApplyAndSave"/> へ渡す。</param>
+internal sealed record HostOutcome(
+    HostDecision Decision, IReadOnlyDictionary<string, JsonNode> StateUpdates);
 
 /// <summary>
 /// 発見済みプラグイン型から、リクエスト毎にインスタンスを生成して並列発火し、
@@ -29,12 +39,15 @@ internal sealed class PluginHost
         _configDir = configDir;
     }
 
-    public async Task<HostDecision> RunAsync(
+    private static readonly IReadOnlyDictionary<string, JsonNode> EmptyUpdates =
+        new Dictionary<string, JsonNode>();
+
+    public async Task<HostOutcome> RunAsync(
         IReadOnlyList<Type> pluginTypes, HookData data, CancellationToken ct = default)
     {
         if (pluginTypes.Count == 0)
         {
-            return new HostDecision(0, null);
+            return new HostOutcome(new HostDecision(0, null), EmptyUpdates);
         }
 
         using var gate = new SemaphoreSlim(_maxParallel);
@@ -42,10 +55,22 @@ internal sealed class PluginHost
         var tasks = pluginTypes.Select(t => RunOneAsync(t, data, gate, ct)).ToArray();
         var results = await Task.WhenAll(tasks).ConfigureAwait(false);
 
-        return Aggregate(results);
+        var decision = Aggregate(results.Select(r => r.Result));
+
+        // 各プラグインが返した state スライスを PluginName で束ねる（null＝変更なしは除外）。
+        var updates = new Dictionary<string, JsonNode>(StringComparer.Ordinal);
+        foreach (var (name, result) in results)
+        {
+            if (result.State is { } slice)
+            {
+                updates[name] = slice; // 規約上 PluginName は一意。万一重複しても後勝ち。
+            }
+        }
+
+        return new HostOutcome(decision, updates);
     }
 
-    private async Task<PluginResult> RunOneAsync(
+    private async Task<(string Name, PluginResult Result)> RunOneAsync(
         Type type, HookData data, SemaphoreSlim gate, CancellationToken ct)
     {
         await gate.WaitAsync(ct).ConfigureAwait(false);
@@ -60,7 +85,7 @@ internal sealed class PluginHost
         }
     }
 
-    private PluginResult Execute(Type type, HookData data)
+    private (string Name, PluginResult Result) Execute(Type type, HookData data)
     {
         var result = new PluginResult();
 
@@ -72,15 +97,15 @@ internal sealed class PluginHost
         catch (Exception ex)
         {
             _log(LogEntry.Error($"インスタンス生成失敗 ({type.FullName}): {ex.Message}"));
-            return result;
+            return (type.FullName ?? "unknown", result);
         }
 
         var name = plugin.PluginName;
 
-        // Tools/Events フィルタ: マッチしない場合は発火しない（ExitCode 0 のまま）。
+        // Tools/Events フィルタ: マッチしない場合は発火しない（ExitCode 0・State null のまま）。
         if (!plugin.ShouldFire(data))
         {
-            return result;
+            return (name, result);
         }
 
         try
@@ -89,7 +114,7 @@ internal sealed class PluginHost
             // 起動時に ProjectContext が検証済みのため通常成功。失敗はフェイルオープン（ログのみ）。
             plugin.LoadConfig(_configDir);
             // Init は ProjectContext がプロジェクトごとに1回実行済み。ここでは Action のみ。
-            // 列挙完了で result.ExitCode が確定。
+            // 列挙完了で result.ExitCode / result.State が確定。
             foreach (var entry in plugin.Action(data, result))
             {
                 _log(entry with { Source = name });
@@ -100,7 +125,7 @@ internal sealed class PluginHost
             // フェイルオープン: プラグインのクラッシュではブロックしない（ログのみ）。
             _log(LogEntry.Error($"実行失敗: {ex.Message}") with { Source = name });
         }
-        return result;
+        return (name, result);
     }
 
     /// <summary>

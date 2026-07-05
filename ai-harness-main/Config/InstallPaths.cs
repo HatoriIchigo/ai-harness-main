@@ -16,6 +16,12 @@ internal static class InstallPaths
     /// <summary>共有プラグイン DLL の走査先（実行体隣の <c>lib/</c>）。全プロジェクト共通。</summary>
     public static string LibDir => Path.Combine(AppContext.BaseDirectory, "lib");
 
+    /// <summary>
+    /// プロジェクトへコピーする既定リソース（静的ファイル）の置き場（実行体隣の <c>resources/</c>）。
+    /// 例: <c>phase.yml</c>（プロジェクトに phase.yml が無いとき本ディレクトリからコピーする）。
+    /// </summary>
+    public static string ResourcesDir => Path.Combine(AppContext.BaseDirectory, "resources");
+
     /// <summary>daemon の作業領域（実行体隣の <c>run/</c>。ロックファイル等）。グローバル単一。</summary>
     public static string RunDir => Path.Combine(AppContext.BaseDirectory, "run");
 

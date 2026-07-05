@@ -21,4 +21,9 @@
     <PackageReference Include="YamlDotNet" Version="18.0.0" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- プロジェクトへコピーする既定ファイル（phase.yml 等）。実行体隣の resources/ に配置する。 -->
+    <Content Include="resources\**" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>

@@ -17,6 +17,7 @@ internal sealed class ProjectContext : IDisposable
 
     private readonly Action<LogEntry> _globalLog;
     private readonly PluginRegistry _registry;
+    private readonly StateStore _stateStore;
     private readonly object _buildLock = new();
 
     // 再構築（ホットリロード）で差し替わる状態。RunAsync から読まれるため volatile。
@@ -30,13 +31,14 @@ internal sealed class ProjectContext : IDisposable
 
     private ProjectContext(
         PluginRegistry registry, Action<LogEntry> globalLog,
-        ProjectConfig config, Logger logger, IReadOnlyList<Type> validTypes)
+        ProjectConfig config, Logger logger, IReadOnlyList<Type> validTypes, StateStore stateStore)
     {
         _registry = registry;
         _globalLog = globalLog;
         _config = config;
         _logger = logger;
         _validTypes = validTypes;
+        _stateStore = stateStore;
         Touch();
     }
 
@@ -61,7 +63,19 @@ internal sealed class ProjectContext : IDisposable
         }
 
         var validTypes = ValidateAndInit(registry.Types, config, logger);
-        var ctx = new ProjectContext(registry, globalLog, config, logger, validTypes);
+        // state ストアは設定ホットリロード（有効プラグイン再構築）とは独立に 1 つ保持する。
+        var stateStore = StateStore.Create(projectRoot, globalLog);
+
+        // フェーズ定義（phase.yml）を用意し、state に現在フェーズが無ければ初期フェーズ（先頭定義）を設定する。
+        // config 監視の開始前に行うため、この phase.yml/state.json 書き込みはホットリロードを誘発しない。
+        PhaseGraph.EnsureDefault(config.ConfigDir, globalLog);
+        if (stateStore.GetPhase() is null && PhaseGraph.Load(config.ConfigDir).Initial is { } initial)
+        {
+            stateStore.SetPhase(initial);
+            globalLog(LogEntry.Info($"初期フェーズを設定: {initial}"));
+        }
+
+        var ctx = new ProjectContext(registry, globalLog, config, logger, validTypes, stateStore);
         logger.Write(LogLevel.Info,
             $"プロジェクト初期化 root={projectRoot} 有効プラグイン={validTypes.Count} parallel={config.MaxParallel}");
         ctx.StartWatching();
@@ -69,13 +83,30 @@ internal sealed class ProjectContext : IDisposable
     }
 
     /// <summary>1 件の hook データを処理し、判定を返す。アクセス時刻を更新する。</summary>
-    public Task<HostDecision> RunAsync(HookData data, CancellationToken ct = default)
+    public async Task<HostDecision> RunAsync(HookData data, CancellationToken ct = default)
     {
         Touch();
         var config = _config;
         var logger = _logger;
         var types = _validTypes;
-        return new PluginHost(logger.Emit, config.MaxParallel, config.ConfigDir).RunAsync(types, data, ct);
+
+        // state 全体を読み取り用に注入（発火時点のスナップショット。共有参照ゆえプラグインは書き換えない）。
+        data.State = _stateStore.Current;
+
+        // フェーズ制御コマンド（UserPromptSubmit の /harness-next-phase[-help]）は main が直接処理し、
+        // プラグインは発火させない。結果は非ブロックの additionalContext で返す。
+        if (data.Event == HookEvent.UserPromptSubmit && PhaseController.IsCommand(data.Prompt))
+        {
+            return PhaseController.Handle(config.ConfigDir, _stateStore, data.Prompt!, logger.Emit);
+        }
+
+        var outcome = await new PluginHost(logger.Emit, config.MaxParallel, config.ConfigDir)
+            .RunAsync(types, data, ct).ConfigureAwait(false);
+
+        // 各プラグインが返した state スライスを名前空間ごとに反映（差分があれば書き戻す）。
+        _stateStore.ApplyAndSave(outcome.StateUpdates);
+
+        return outcome.Decision;
     }
 
     private void Touch() => Interlocked.Exchange(ref _lastAccessTicksUtc, DateTime.UtcNow.Ticks);
@@ -260,5 +291,6 @@ internal sealed class ProjectContext : IDisposable
             // 破棄失敗は無視。
         }
         _watcher = null;
+        _stateStore.Dispose();
     }
 }

@@ -112,7 +112,11 @@ ai-harness-main/
 
 ## 関連プロジェクト
 
-| プロジェクト | 役割 |
-|---|---|
-| `ai-harness-baselib` | プラグイン契約（`PluginBase`／`HookData` 等）を定義する共有ライブラリ |
-| `sample-plugins/` | 動作する参考プラグイン（`EventLogger`／`DenyMarker`／`LogTester`） |
+| プロジェクト | 役割 | 種別 |
+|---|---|---|
+| [`ai-harness-baselib`](https://github.com/HatoriIchigo/ai-harness-baselib) | プラグイン契約（`PluginBase`／`HookData`／`PluginResult`／`LogEntry` 等）を定義する共有ライブラリ | ライブラリ |
+| [`ai-harness-deny`](https://github.com/HatoriIchigo/ai-harness-deny) | `PreToolUse` で `rules`／`bash`／`files` の 3 系統ルールにマッチしたツール実行を deny | プラグイン |
+| [`ai-harness-git-commit`](https://github.com/HatoriIchigo/ai-harness-git-commit) | `git commit` のメッセージ規約（tag・文字数・禁止語）を強制し、違反時は作り直させる | プラグイン |
+| [`ai-harness-directory-checker`](https://github.com/HatoriIchigo/ai-harness-directory-checker) | `PostToolUse` で書き込んだ `file_path` を許可 glob と照合し、外れた配置を deny して差し戻す | プラグイン |
+| [`ai-harness-constants`](https://github.com/HatoriIchigo/ai-harness-constants) | `PostToolUse` で書き込んだソースを tree-sitter で AST 解析し、許可した定数ファイル以外のハードコード値を deny | プラグイン |
+| [`ai-harness-file-rules`](https://github.com/HatoriIchigo/ai-harness-file-rules) | `PostToolUse` で書き込んだソースを tree-sitter で AST 解析し、ファイル単位のコード構造ルール（行数・1クラス1ファイル・メソッド数/行数）を強制 | プラグイン |

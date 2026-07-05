@@ -1,0 +1,29 @@
+# ai-harness フェーズ定義（既定）。
+# プロジェクトの .claude/harness/config/phase.yml が無いとき、本ファイルがコピーされる。
+#
+# 各フェーズ:
+#   desc : そのフェーズで作成すべきもの（/harness-next-phase-help が返す説明）。
+#   next : 遷移可能な次フェーズの一覧。
+# 先頭に定義したフェーズ（req_nfr）が、state 未設定時の初期フェーズになる。
+phase:
+  req_nfr:
+    desc: "非機能要件を定義する"
+    next: [req_infra, req_backend]
+  req_infra:
+    desc: "インフラ要件を定義する"
+    next: [req_backend]
+  req_backend:
+    desc: "バックエンド要件を定義する"
+    next: [req_frontend, structure]
+  req_frontend:
+    desc: "フロントエンド要件を定義する"
+    next: [structure]
+  structure:
+    desc: "全体構成・設計を定義する"
+    next: [implement]
+  implement:
+    desc: "実装する"
+    next: [test]
+  test:
+    desc: "テストする"
+    next: []
