@@ -64,9 +64,12 @@ public static class Program
     /// OS が既ロードのモジュールを返す。PATH や探索パスを一切変更せず、アプリが自分の同梱ネイティブを
     /// 明示的にロードするだけ。プラグインを動かすモード（daemon／standalone）で発火前に一度呼ぶ。
     ///
-    /// この実行体隣の <c>runtimes/</c> には**方針上 tree-sitter の native のみ**を置く（ベア名ロードのための
-    /// 例外措置）。tree-sitter 以外で native を使うプラグインはここへ入れず、自分の native を <c>lib/</c> 側に
-    /// 同梱し <c>.deps.json</c> 経由で ALC（<see cref="PluginLoadContext"/>）が per-plugin 解決する。
+    /// この実行体隣の <c>runtimes/</c> に**既定リリースで置いてよいのは tree-sitter の native のみ**（汎用
+    /// first-party の特例）。それ以外で native が要るプラグインは、native を**自分の管理 DLL に埋め込み**、
+    /// host が起動時に <c>runtimes/&lt;rid&gt;/native/</c> へ**自動展開**（冪等・グローバル単一・起動時 1 回）して
+    /// から本メソッドで事前ロードする。使用者は <c>lib/</c> に管理 DLL を置くだけで <c>runtimes/</c> を触らない。
+    /// この自動展開フックは最初の非 tree-sitter native プラグイン登場時に実装する。詳細は
+    /// docs/build-and-deploy.md の「native 配布ポリシー」を参照。
     ///
     /// 個々のロード失敗はここでは無視して daemon 起動自体は止めない。ただし当該 grammar を使う tree-sitter
     /// プラグインは実行時に AST 解析へ失敗し、フェイルクローズで当該アクションがブロックされる。

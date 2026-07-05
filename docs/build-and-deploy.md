@@ -95,9 +95,18 @@ cp <plugin>.yml                                       <プロジェクト>/.clau
 
 > **tree-sitter ネイティブ**（constants／file-rules が使う `tree-sitter-*.dll`）は `lib/` ではなく**実行体隣の `runtimes/<rid>/native/`** に置く。TreeSitter.DotNet が grammar を「ベア名」で `NativeLibrary.Load` するため `.deps.json`／ALC のネイティブ解決を経由せず、OS 既定探索（実行体ディレクトリ・system・PATH）に無いと `DllNotFoundException` になる。host（`ai-harness-main`）は daemon／standalone 起動時に `runtimes/<現在の RID>/native/` の各ファイルをフルパスで事前ロードし、以降のベア名ロードを OS の既ロード解決に委ねる（PATH や探索パスは変更しない）。
 >
-> **配布方針**: この native は特定プラグイン専用ではなく汎用（どの tree-sitter プラグインでも同一）なので、**host のリリース zip に `runtimes/<rid>/native/` として同梱**する。tree-sitter プラグインの配布物は `lib/` のマネージド DLL のみ（native を含めない）。よってエンドユーザは host を展開しプラグイン DLL を `lib/` へ置くだけでよく、runtimes を別途用意する必要はない。host に同梱する native のバージョンは、プラグインが参照する `TreeSitter.dll`（現状 `TreeSitter.DotNet 1.3.0`）と一致させる。
->
-> **これは tree-sitter 固有の例外措置**（ベア名ロードのため host 事前ロードが必須）であり、他の native 依存プラグインには適用しない。tree-sitter 以外で native を使うプラグインは、**自分の native を `lib/` 側に同梱**し（プラグイン出力の `runtimes/<rid>/native/` を `lib/` 配下へ）、`.deps.json` 経由で ALC（`PluginLoadContext.LoadUnmanagedDll` → `AssemblyDependencyResolver`）が **per-plugin で解決**する。host はそれらを同梱・事前ロードしない。
+### native 配布ポリシー
+
+native の入手経路は使用者が置くもの（host と `lib/` のプラグイン DLL）に限られる。使用者に `runtimes/` を触らせない・winget を前提にしない・既定リリースを汚さない、を満たすため次で固定する。
+
+1. **既定リリースに native を同梱してよいのは tree-sitter のみ。** 汎用（どの tree-sitter プラグインでも同一）の first-party 依存なので、host のリリース zip に `runtimes/<rid>/native/` として封入する。tree-sitter プラグインの配布物は `lib/` のマネージド DLL のみ。同梱 native の版はプラグインが参照する `TreeSitter.dll`（現状 `TreeSitter.DotNet 1.3.0`）と一致させる。
+
+2. **それ以外の native は既定リリースに一切含めない**（host にも `lib/` にも置かない）。使用者は `runtimes/` を触らない（追加不可）。ただし**プログラム（host）が `runtimes/` を書き換えるのは可**。
+
+3. **tree-sitter 以外で native が要るプラグインは、native を自分の管理 DLL に埋め込む（embedded resource）。** host が起動時に `runtimes/<rid>/native/` へ**自動展開**してから事前ロードする。使用者は従来どおり管理 DLL を `lib/` に置くだけで、`runtimes/` を触らない。native はプラグイン DLL に同梱されるため**完全オフライン**（ネットワーク・外部インストーラ不要）。native を `DllImport`／ベア名のどちらでロードしても、`runtimes/` 事前ロード（既ロード解決）で効く。
+
+   - 自動展開は**グローバル単一の `runtimes/`・冪等（既に在れば何もしない）・起動時 1 回（型発見時）**。複数プロジェクト（マルチテナント）や複数プラグインが同じ native を要求しても、`runtimes/` には 1 つだけ・展開も 1 回だけ。初回展開の競合は `.tmp` → atomic rename で回避する。
+   - この host 側の自動展開フックは、**最初の非 tree-sitter native プラグインが登場した時点で実装**する（tree-sitter は既定同梱なので現状は不要）。`PreloadNativeLibraries` による `runtimes/` 事前ロードの仕組みは共通で流用する。
 
 ## Claude Code への配線（settings.json）
 
