@@ -91,7 +91,7 @@ cp ai-harness-main/ai-harness-main/config/common.yml <プロジェクト>/.claud
 cp <plugin>.yml                                       <プロジェクト>/.claude/harness/config/
 ```
 
-> `lib/` には**プラグイン DLL のみ**を置く。`ai-harness-baselib.dll` は host が共有ロードするため置かない（プラグインの csproj 側で `<Private>false</Private>` と `CopyLocalLockFileAssemblies=false` を指定して出力から除外する）。loader も `ai-harness-baselib` という名前の DLL はスキップする。
+> `lib/` には**プラグインの管理 DLL のみ**を置く。`ai-harness-baselib.dll` は host が共有ロードするため置かない（プラグインの csproj 側で `<Private>false</Private>` と `CopyLocalLockFileAssemblies=false` を指定して出力から除外する）。loader も `ai-harness-baselib` という名前の DLL はスキップする。プラグインが参照する管理依存（例: tree-sitter プラグインの `TreeSitter.dll`）も同じ `lib/` に同居させる。**`.deps.json` は不要**——`PluginLoadContext`（ALC）が `.deps.json` で解決できない管理依存を **`lib/` 直下の同名 DLL として直接プローブ**するため、プラグイン配布物は管理 DLL だけでよい（フレームワーク assembly は `lib/` に無いので既定コンテキストへ委ねられる）。
 
 > **tree-sitter ネイティブ**（constants／file-rules が使う `tree-sitter-*.dll`）は `lib/` ではなく**実行体隣の `runtimes/<rid>/native/`** に置く。TreeSitter.DotNet が grammar を「ベア名」で `NativeLibrary.Load` するため `.deps.json`／ALC のネイティブ解決を経由せず、OS 既定探索（実行体ディレクトリ・system・PATH）に無いと `DllNotFoundException` になる。host（`ai-harness-main`）は daemon／standalone 起動時に `runtimes/<現在の RID>/native/` の各ファイルをフルパスで事前ロードし、以降のベア名ロードを OS の既ロード解決に委ねる（PATH や探索パスは変更しない）。
 >
