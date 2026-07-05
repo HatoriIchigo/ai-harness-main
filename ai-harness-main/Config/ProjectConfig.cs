@@ -35,6 +35,14 @@ internal sealed class ProjectConfig
     /// </summary>
     public required IReadOnlyDictionary<string, bool> ToolToggles { get; init; }
 
+    /// <summary>
+    /// <c>common.yml</c> が<b>存在するのに解析に失敗</b>したときのエラー内容（それ以外は <c>null</c>）。
+    /// 設定ファイルが無いプロジェクト（ハーネス未使用）は <c>null</c> のまま＝対象外。
+    /// フェイルクローズ方針では「在るのに壊れている＝何を強制すべきか判断できない」ため、host はこの
+    /// プロジェクトの hook をブロックする（<see cref="ProjectContext.RunAsync"/> で判定）。
+    /// </summary>
+    public string? LoadError { get; init; }
+
     public const string ConfigFileName = "common.yml";
 
     /// <summary>このプロジェクトの設定ファイル（<c>common.yml</c>）の絶対パス。</summary>
@@ -109,6 +117,7 @@ internal sealed class ProjectConfig
             MaxParallel = maxParallel,
             MinLogLevel = minLogLevel,
             ToolToggles = toolToggles,
+            LoadError = configWarning, // 非 null＝common.yml が在るのに壊れている（フェイルクローズ対象）
         };
     }
 

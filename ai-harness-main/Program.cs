@@ -14,12 +14,13 @@ namespace ai_harness_main;
 ///   --restart    … daemon を停止してから再起動（lib＝プラグイン DLL の差し替え反映用）。
 ///   --standalone … daemon を介さず stdin を直接 1 件処理して終了（テスト・フォールバック）。
 ///
-/// 終了コード（bridge / standalone の Claude hook 規約）: 0=許可 / 2=deny / 1=内部エラー（非ブロッキング）。
+/// 終了コード（bridge / standalone の Claude hook 規約）: 0=許可 / 2=deny。
+/// 内部エラー・不正入力・検証不能は**フェイルクローズ**で 2（ブロック）に倒す。例外は bridge が daemon に
+/// まったく接続できない場合のみで、ロックアウト回避のため 0（許可）で継続する。
 /// </summary>
 public static class Program
 {
     private const int ExitAllow = 0;
-    private const int ExitInternalError = 1;
     private const int ExitDeny = 2;
 
     public static async Task<int> Main(string[] args)
@@ -101,8 +102,10 @@ public static class Program
         }
         catch (Exception ex)
         {
-            await Console.Error.WriteLineAsync($"hook データの解析に失敗: {ex.Message}").ConfigureAwait(false);
-            return ExitInternalError;
+            // フェイルクローズ: 解釈できない入力は通さない（daemon 経路と揃える）。
+            await Console.Error.WriteLineAsync(
+                $"hook データの解析に失敗（フェイルクローズ）: {ex.Message}").ConfigureAwait(false);
+            return ExitDeny;
         }
 
         HostDecision decision;
@@ -115,8 +118,9 @@ public static class Program
         }
         catch (Exception ex)
         {
-            await Console.Error.WriteLineAsync($"処理に失敗: {ex.Message}").ConfigureAwait(false);
-            return ExitInternalError;
+            // フェイルクローズ: 検証できなかった場合はブロックする。
+            await Console.Error.WriteLineAsync($"処理に失敗（フェイルクローズ）: {ex.Message}").ConfigureAwait(false);
+            return ExitDeny;
         }
         finally
         {

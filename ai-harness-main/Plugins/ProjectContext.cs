@@ -90,6 +90,15 @@ internal sealed class ProjectContext : IDisposable
         var logger = _logger;
         var types = _validTypes;
 
+        // フェイルクローズ: common.yml が「存在するのに壊れている」場合は、何を強制すべきか判断できないため通さない。
+        // common.yml が無いプロジェクト（ハーネス未使用）は LoadError=null なので、この分岐に入らず素通りする。
+        // common.yml を直せばホットリロードでコンテキストが再構築され、ブロックは解除される。
+        if (config.LoadError is { } configError)
+        {
+            logger.Write(LogLevel.Error, $"common.yml 不正のためブロック（フェイルクローズ）: {configError}");
+            return new HostDecision(2, $"common.yml の読み込みに失敗しています（フェイルクローズ）。設定を修正してください: {configError}");
+        }
+
         // state 全体を読み取り用に注入（発火時点のスナップショット。共有参照ゆえプラグインは書き換えない）。
         data.State = _stateStore.Current;
 

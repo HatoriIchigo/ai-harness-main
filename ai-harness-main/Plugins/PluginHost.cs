@@ -96,7 +96,10 @@ internal sealed class PluginHost
         }
         catch (Exception ex)
         {
-            _log(LogEntry.Error($"インスタンス生成失敗 ({type.FullName}): {ex.Message}"));
+            // フェイルクローズ: プラグインを生成できない＝検証できないので通さない。
+            _log(LogEntry.Error($"インスタンス生成失敗（フェイルクローズでブロック） ({type.FullName}): {ex.Message}"));
+            result.ExitCode = 2;
+            result.Reason = $"{type.FullName} の生成に失敗（フェイルクローズ）: {ex.Message}";
             return (type.FullName ?? "unknown", result);
         }
 
@@ -111,7 +114,7 @@ internal sealed class PluginHost
         try
         {
             // 設定をこのインスタンスへロード（Action から Config を参照可能にする）。
-            // 起動時に ProjectContext が検証済みのため通常成功。失敗はフェイルオープン（ログのみ）。
+            // 起動時に ProjectContext が検証済みのため通常成功。失敗時は下の catch でフェイルクローズ（ブロック）。
             plugin.LoadConfig(_configDir);
             // Init は ProjectContext がプロジェクトごとに1回実行済み。ここでは Action のみ。
             // 列挙完了で result.ExitCode / result.State が確定。
@@ -122,8 +125,11 @@ internal sealed class PluginHost
         }
         catch (Exception ex)
         {
-            // フェイルオープン: プラグインのクラッシュではブロックしない（ログのみ）。
-            _log(LogEntry.Error($"実行失敗: {ex.Message}") with { Source = name });
+            // フェイルクローズ: プラグインが検証を完了できなかった（クラッシュ）場合は通さない。
+            // 検証を通り抜けさせるとガードとして機能しないため、当該アクションをブロックする。
+            _log(LogEntry.Error($"実行失敗（フェイルクローズでブロック）: {ex.Message}") with { Source = name });
+            result.ExitCode = 2;
+            result.Reason = $"{name} の検証に失敗（フェイルクローズ）: {ex.Message}";
         }
         return (name, result);
     }

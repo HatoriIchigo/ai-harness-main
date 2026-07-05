@@ -94,6 +94,8 @@ cp <plugin>.yml                                       <プロジェクト>/.clau
 > `lib/` には**プラグイン DLL のみ**を置く。`ai-harness-baselib.dll` は host が共有ロードするため置かない（プラグインの csproj 側で `<Private>false</Private>` と `CopyLocalLockFileAssemblies=false` を指定して出力から除外する）。loader も `ai-harness-baselib` という名前の DLL はスキップする。
 
 > **tree-sitter ネイティブ**（constants／file-rules が使う `tree-sitter-*.dll`）は `lib/` ではなく**実行体隣の `runtimes/<rid>/native/`** に置く。TreeSitter.DotNet が grammar を「ベア名」で `NativeLibrary.Load` するため `.deps.json`／ALC のネイティブ解決を経由せず、OS 既定探索（実行体ディレクトリ・system・PATH）に無いと `DllNotFoundException` になる。host（`ai-harness-main`）は daemon／standalone 起動時に `runtimes/<現在の RID>/native/` の各ファイルをフルパスで事前ロードし、以降のベア名ロードを OS の既ロード解決に委ねる（PATH や探索パスは変更しない）。
+>
+> **配布方針**: この native は特定プラグイン専用ではなく汎用（どの tree-sitter プラグインでも同一）なので、**host のリリース zip に `runtimes/<rid>/native/` として同梱**する。プラグインの配布物は `lib/` のマネージド DLL のみ（native を含めない）。よってエンドユーザは host を展開しプラグイン DLL を `lib/` へ置くだけでよく、runtimes を別途用意する必要はない。host に同梱する native のバージョンは、プラグインが参照する `TreeSitter.dll`（現状 `TreeSitter.DotNet 1.3.0`）と一致させる。
 
 ## Claude Code への配線（settings.json）
 

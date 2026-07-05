@@ -145,13 +145,18 @@ internal static class Daemon
             catch (Exception ex)
             {
                 globalLog.Write(LogLevel.Error, $"封筒の解析に失敗: {ex.Message}");
-                await RespondAsync(server, 0, null).ConfigureAwait(false); // fail-open
+                // フェイルクローズ: リクエストを解釈できない場合は通さない。
+                await RespondAsync(server, 2,
+                    $"ハーネス内部エラー（封筒解析失敗）によりブロック（フェイルクローズ）: {ex.Message}")
+                    .ConfigureAwait(false);
                 return;
             }
 
             if (env is null)
             {
-                await RespondAsync(server, 0, null).ConfigureAwait(false);
+                // フェイルクローズ: 空の封筒は解釈できないため通さない。
+                await RespondAsync(server, 2,
+                    "ハーネス内部エラー（封筒が空）によりブロック（フェイルクローズ）").ConfigureAwait(false);
                 return;
             }
 
@@ -176,9 +181,9 @@ internal static class Daemon
             catch (Exception ex)
             {
                 globalLog.Write(LogLevel.Error, $"hook 処理失敗: {ex.Message}");
-                // 内部エラーはブロックしない（fail-open）。HostDecision.IsDeny は ExitCode!=0 で真になるため、
-                // ここは必ず ExitCode=0 にする（非 0 だと :182 の IsDeny?2:0 で 2＝ブロックになってしまう）。
-                decision = new HostDecision(0, null);
+                // フェイルクローズ: ハーネスが hook を検証できなかった場合は通さない（ブロック）。
+                // 検証できないアクションを素通りさせるとガードとして機能しないため。理由を添えてブロックする。
+                decision = new HostDecision(2, $"ハーネス内部エラーによりブロック（フェイルクローズ）: {ex.Message}");
             }
 
             await RespondAsync(server, decision.IsDeny ? 2 : 0, decision.Reason, decision.AdditionalContext)
@@ -197,8 +202,20 @@ internal static class Daemon
     private static ProjectContext GetOrCreateProject(string projectRoot)
     {
         var key = Path.GetFullPath(projectRoot);
-        return Projects.GetOrAdd(key,
-            r => new Lazy<ProjectContext>(() => ProjectContext.Create(_registry, _globalLog.Emit, r))).Value;
+        var lazy = Projects.GetOrAdd(key,
+            r => new Lazy<ProjectContext>(() => ProjectContext.Create(_registry, _globalLog.Emit, r)));
+        try
+        {
+            return lazy.Value;
+        }
+        catch
+        {
+            // フェイルクローズ下では初期化例外がそのまま hook のブロックになる。Lazy は例外もキャッシュするため、
+            // 一過性の失敗（state.json/phase.yml の一時的 IO 等）でも放置すると当該プロジェクトの全 hook が
+            // 恒久ブロック＝ロックアウトになる。失敗エントリを取り除き、次リクエストで再初期化を試みさせる。
+            Projects.TryRemove(new KeyValuePair<string, Lazy<ProjectContext>>(key, lazy));
+            throw;
+        }
     }
 
     // ---- アイドル回収 ----
