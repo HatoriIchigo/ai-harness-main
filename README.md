@@ -1,6 +1,17 @@
 # ai-harness-main
 
-> Claude Code の hook を受け、拡張プラグインを発火させる単一バイナリのハーネス本体。
+> LLM エージェントの逸脱を、プロンプトではなく**機械的な制約**で律するハーネス本体。
+
+LLM エージェントは確率的に振る舞う。「このディレクトリ以外に書くな」「このコマンドは打つな」を
+プロンプトで指示しても、それは*お願い*であり守られる保証がない。ハーネスエンジニアリングは、この規約を
+**決定論的なガードレール**として外側から強制する考え方。モデルの善意ではなく仕組みでアクションを律する。
+
+`ai-harness-main` はその実行基盤。Claude Code の hook を受け、拡張プラグイン（deny・ディレクトリ検証・
+コミット規約など）を機械的に発火させ、規約に外れたアクションを**確実に差し戻す**。「勝手にディレクトリを
+作る」「許可外の場所にファイルを置く」「禁止コマンドを打つ」といった逸脱を、起きた後ではなく**起きる境界で**
+止める。
+
+## アーキテクチャ概要
 
 単一の実行体 `ai-harness-main` が、hook ごとの**受け口（bridge）**と常駐**サーバー（daemon）**を兼ねる。
 hook が叩かれると bridge モードで起動し、cwd からプロジェクトルート（`.claude` を含む階層）を解決して
@@ -12,6 +23,7 @@ hook が叩かれると bridge モードで起動し、cwd からプロジェク
 
 ## 特徴
 
+- **機械的強制（決定論的ガードレール）** — 規約を hook で強制し、外れたアクションを deny で差し戻す。プロンプト依存の"お願い"にしない。
 - **単一バイナリ** — bridge と daemon を 1 つの実行体が兼ねる。配置物は 1 つ。
 - **共有 daemon でウォーム保持** — プラグインの型発見は起動時 1 回。全プロジェクトで共有し、hook ごとの遅延を抑える。
 - **マルチテナント** — プロジェクトルートをキーに設定・ログ・有効プラグインを分離。`lib`（型）は共有。
@@ -66,6 +78,7 @@ Claude Code の `settings.json` では hook コマンドに **`ai-harness-main`*
 | `--restart` | 停止→再起動（`lib` のプラグイン DLL 差し替え反映用） |
 | `--stop` | 停止 |
 | `--standalone` | daemon を介さず stdin を 1 件処理して終了（テスト・フォールバック） |
+| `--update` | `config/plugins.yml` に従い拡張プラグインを `repos/` へ clone／build し `lib/` へ配置し、続けて本体自身も tmp へ publish して置換（自己更新）。`git`／`dotnet` 未導入なら異常終了 |
 
 ## ドキュメント
 
@@ -75,6 +88,7 @@ Claude Code の `settings.json` では hook コマンドに **`ai-harness-main`*
 | [docs/plugin-development.md](docs/plugin-development.md) | 新規プラグイン作成の手順（csproj・実装・発火条件・配置） |
 | [docs/build-and-deploy.md](docs/build-and-deploy.md) | Windows／Linux のビルド・発行・配置・daemon 制御 |
 | [docs/configuration.md](docs/configuration.md) | `common.yml`・プラグイン設定・ディレクトリ規約・ログ |
+| [docs/self-update.md](docs/self-update.md) | `--update` の内部設計（プラグイン更新・本体自己更新・ロールバック） |
 
 ## プロジェクト構成
 
@@ -102,12 +116,17 @@ ai-harness-main/
     │   ├── HookResponse.cs      daemon→bridge の応答
     │   └── Framing.cs           長さ前置フレーミング
     ├── Config/
-    │   ├── InstallPaths.cs      実行体基準のグローバルパス（lib／run／グローバル log）
+    │   ├── InstallPaths.cs      実行体基準のグローバルパス（config／lib／repos／run／グローバル log）
     │   └── ProjectConfig.cs     プロジェクト個別設定（common.yml ロード）
+    ├── Install/
+    │   ├── PluginsConfig.cs     plugins.yml ロード（self／baselib／plugins のインストール定義）
+    │   ├── PluginInstaller.cs   --update 実体（プラグインの clone／build／lib 配置、本体自己更新への橋渡し）
+    │   └── SelfUpdater.cs       本体自己更新（tmp へ publish → --apply-update で実行体を置換・検証・ロールバック）
     ├── Logging/
     │   └── Logger.cs            レベルフィルタ＋ログ集約（出力先は引数）
     └── config/
-        └── common.yml           プロジェクト設定の既定値（配置元サンプル）
+        ├── common.yml           プロジェクト設定の既定値（配置元サンプル）
+        └── plugins.yml          プラグインインストール定義（本体直下 config/ へ配置するサンプル）
 ```
 
 ## 関連プロジェクト

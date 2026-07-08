@@ -330,12 +330,15 @@ internal static class Daemon
         return 0;
     }
 
-    /// <summary>稼働中の daemon を停止させる。</summary>
-    public static int Stop()
+    /// <summary>
+    /// 稼働中の daemon を停止させる。<paramref name="pipeName"/> 省略時は自身の実行体基準のパイプ。
+    /// 自己更新の applier は tmp から動くため、インストール先基準のパイプ名を明示指定する。
+    /// </summary>
+    public static int Stop(string? pipeName = null)
     {
         try
         {
-            using var c = new NamedPipeClientStream(".", HarnessPipe.Name(), PipeDirection.InOut);
+            using var c = new NamedPipeClientStream(".", pipeName ?? HarnessPipe.Name(), PipeDirection.InOut);
             c.Connect(1000);
             var env = new RequestEnvelope { Type = RequestEnvelope.TypeStop };
             var json = JsonSerializer.SerializeToUtf8Bytes(env, ResponseJsonOptions);
@@ -349,11 +352,11 @@ internal static class Daemon
         return 0;
     }
 
-    public static bool IsRunning()
+    public static bool IsRunning(string? pipeName = null)
     {
         try
         {
-            using var c = new NamedPipeClientStream(".", HarnessPipe.Name(), PipeDirection.InOut);
+            using var c = new NamedPipeClientStream(".", pipeName ?? HarnessPipe.Name(), PipeDirection.InOut);
             c.Connect(500);
             return true;
         }

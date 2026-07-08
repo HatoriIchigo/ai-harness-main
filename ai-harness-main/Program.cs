@@ -13,6 +13,11 @@ namespace ai_harness_main;
 ///   --stop       … 稼働中の daemon を停止。
 ///   --restart    … daemon を停止してから再起動（lib＝プラグイン DLL の差し替え反映用）。
 ///   --standalone … daemon を介さず stdin を直接 1 件処理して終了（テスト・フォールバック）。
+///   --update     … config/plugins.yml に従い拡張プラグインを repos/ へ clone／build し lib/ へ配置し、
+///                  続けて本体自身も tmp へ publish して置換（自己更新）。git／dotnet 未導入なら異常終了（非 0）。
+///   --apply-update … 内部モード（ユーザ非公開）。--update が publish した tmp の新バイナリから起動され、
+///                  インストール先の実行体を安全に置換する。
+///   --health     … 起動検証用。ランタイムが正常起動できれば 0 を返す（自己更新のロールバック判定に使う）。
 ///
 /// 終了コード（bridge / standalone の Claude hook 規約）: 0=許可 / 2=deny。
 /// 内部エラー・不正入力・検証不能は**フェイルクローズ**で 2（ブロック）に倒す。例外は bridge が daemon に
@@ -48,6 +53,16 @@ public static class Program
 
             case "--standalone":
                 return await RunStandaloneAsync().ConfigureAwait(false);
+
+            case "--update":
+                return PluginInstaller.Run();
+
+            case "--apply-update":
+                return SelfUpdater.ApplyUpdate(args);
+
+            case "--health":
+                Console.WriteLine("ai-harness-main OK");
+                return ExitAllow;
 
             default:
                 return await Bridge.RunAsync().ConfigureAwait(false);
