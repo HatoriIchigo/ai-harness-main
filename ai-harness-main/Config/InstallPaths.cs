@@ -26,6 +26,20 @@ internal static class InstallPaths
     public static string RunDir => Path.Combine(AppContext.BaseDirectory, "run");
 
     /// <summary>
+    /// 本体（実行体）直下の設定ディレクトリ（実行体隣の <c>config/</c>）。全プロジェクト共通。
+    /// プラグインのインストール定義 <c>plugins.yml</c> を置く（プロジェクト個別設定とは別系統）。
+    /// </summary>
+    public static string ConfigDir => Path.Combine(AppContext.BaseDirectory, "config");
+
+    /// <summary>
+    /// <c>--update</c> がプラグインを clone／build する作業領域（実行体隣の <c>repos/</c>）。グローバル単一。
+    /// </summary>
+    public static string ReposDir => Path.Combine(AppContext.BaseDirectory, "repos");
+
+    /// <summary>プラグインインストール定義ファイル（<c>&lt;実行体&gt;/config/plugins.yml</c>）。</summary>
+    public static string PluginsConfigPath => Path.Combine(ConfigDir, "plugins.yml");
+
+    /// <summary>
     /// daemon 自身のライフサイクルログ出力先（実行体隣の <c>logs/</c>）。
     /// プロジェクト解決前のイベント（型発見・起動・回収・停止）を記録する。
     /// プロジェクト解決後の hook 処理ログは各プロジェクトの <see cref="ProjectConfig.LogDir"/> へ。
