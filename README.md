@@ -88,6 +88,7 @@ Claude Code の `settings.json` では hook コマンドに **`ai-harness-main`*
 | [docs/plugin-development.md](docs/plugin-development.md) | 新規プラグイン作成の手順（csproj・実装・発火条件・配置） |
 | [docs/build-and-deploy.md](docs/build-and-deploy.md) | Windows／Linux のビルド・発行・配置・daemon 制御 |
 | [docs/configuration.md](docs/configuration.md) | `common.yml`・プラグイン設定・ディレクトリ規約・ログ |
+| [docs/self-update.md](docs/self-update.md) | `--update` の内部設計（プラグイン更新・本体自己更新・ロールバック） |
 
 ## プロジェクト構成
 
