@@ -146,6 +146,7 @@ ai-harness-main --update
 ```
 
 - `<インストール先>/repos/` に各リポジトリを shallow clone／pull し、`dotnet build -c Release` の成果 DLL（`ai-harness-baselib.dll` は除外）を `lib/` へ配置する。
+- プラグインより先に **baselib を `repos/ai-harness-baselib` へ用意**する。各プラグインの csproj が `..\..\ai-harness-baselib\...` と兄弟ディレクトリを相対参照するため（baselib はプラグインのビルド依存であり、本体の更新ではない）。取得元は `plugins.yml` の `baselib`（省略時は既定リポジトリの `main`）。
 - `git`／`dotnet` が PATH に無ければ何もせず異常終了（非 0）。
 - 配置後、稼働中の daemon を自動 `--restart` して差し替えを反映する。
 - `lib/` へ入れただけでは発火しない。各プロジェクトの `common.yml` の `tools` で有効化する。

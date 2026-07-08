@@ -14,6 +14,19 @@ namespace ai_harness_main;
 /// </summary>
 internal sealed class PluginsConfig
 {
+    /// <summary>baselib リポジトリの既定 URL（<c>baselib</c> 未指定時に使う）。</summary>
+    public const string DefaultBaselibPath = "https://github.com/HatoriIchigo/ai-harness-baselib";
+
+    /// <summary>baselib の既定ブランチ。</summary>
+    public const string DefaultBaselibBranch = "main";
+
+    /// <summary>
+    /// 拡張プラグインが <c>ProjectReference</c> で参照する共有ライブラリ（baselib）の取得元。
+    /// 各プラグインの csproj は <c>..\..\ai-harness-baselib\...</c> と兄弟ディレクトリを相対参照するため、
+    /// プラグインのビルド前に <c>repos/ai-harness-baselib</c> へ用意する必要がある。<c>baselib</c> 未指定は既定値。
+    /// </summary>
+    public required PluginEntry Baselib { get; init; }
+
     /// <summary>インストール対象プラグインの一覧。</summary>
     public required IReadOnlyList<PluginEntry> Plugins { get; init; }
 
@@ -59,12 +72,23 @@ internal sealed class PluginsConfig
             });
         }
 
-        return new PluginsConfig { Plugins = entries };
+        var baselib = new PluginEntry
+        {
+            Path = string.IsNullOrWhiteSpace(model?.Baselib?.Path)
+                ? DefaultBaselibPath
+                : model.Baselib.Path.Trim(),
+            Branch = string.IsNullOrWhiteSpace(model?.Baselib?.Branch)
+                ? DefaultBaselibBranch
+                : model.Baselib.Branch.Trim(),
+        };
+
+        return new PluginsConfig { Baselib = baselib, Plugins = entries };
     }
 
     /// <summary>plugins.yml のデシリアライズ用 DTO。</summary>
     private sealed class PluginsYaml
     {
+        public PluginEntryYaml? Baselib { get; set; }
         public List<PluginEntryYaml>? Plugins { get; set; }
     }
 

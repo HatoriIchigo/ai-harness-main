@@ -5,6 +5,14 @@
 # 本体（ai-harness-main 自身）は更新対象外。拡張プラグインのみを扱う。
 # 前提: git / dotnet が PATH に必要（無ければ --update は異常終了）。
 
+# 拡張プラグインがビルド時に ProjectReference で参照する共有ライブラリ（baselib）。
+# 各プラグインの csproj は ..\..\ai-harness-baselib\... と兄弟ディレクトリを相対参照するため、
+# --update はプラグインのビルド前に repos/ai-harness-baselib へこれを用意する。
+# 省略時は下記の既定値。本体（ai-harness-main 自身）は更新対象外（これはビルド依存）。
+baselib:
+  path: https://github.com/HatoriIchigo/ai-harness-baselib
+  branch: main
+
 plugins:
   # path:   clone 元のリポジトリ URL
   # branch: 取得するブランチ（未指定は main）
