@@ -66,6 +66,7 @@ Claude Code の `settings.json` では hook コマンドに **`ai-harness-main`*
 | `--restart` | 停止→再起動（`lib` のプラグイン DLL 差し替え反映用） |
 | `--stop` | 停止 |
 | `--standalone` | daemon を介さず stdin を 1 件処理して終了（テスト・フォールバック） |
+| `--update` | `config/plugins.yml` に従い拡張プラグインを `repos/` へ clone／build し `lib/` へ配置（本体自身は更新しない）。`git`／`dotnet` 未導入なら異常終了 |
 
 ## ドキュメント
 
@@ -102,12 +103,16 @@ ai-harness-main/
     │   ├── HookResponse.cs      daemon→bridge の応答
     │   └── Framing.cs           長さ前置フレーミング
     ├── Config/
-    │   ├── InstallPaths.cs      実行体基準のグローバルパス（lib／run／グローバル log）
+    │   ├── InstallPaths.cs      実行体基準のグローバルパス（config／lib／repos／run／グローバル log）
     │   └── ProjectConfig.cs     プロジェクト個別設定（common.yml ロード）
+    ├── Install/
+    │   ├── PluginsConfig.cs     plugins.yml ロード（インストール定義）
+    │   └── PluginInstaller.cs   --update 実体（clone／build／lib 配置・daemon 再起動）
     ├── Logging/
     │   └── Logger.cs            レベルフィルタ＋ログ集約（出力先は引数）
     └── config/
-        └── common.yml           プロジェクト設定の既定値（配置元サンプル）
+        ├── common.yml           プロジェクト設定の既定値（配置元サンプル）
+        └── plugins.yml          プラグインインストール定義（本体直下 config/ へ配置するサンプル）
 ```
 
 ## 関連プロジェクト

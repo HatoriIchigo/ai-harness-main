@@ -1,0 +1,12 @@
+# ai-harness 拡張プラグインのインストール定義ファイル
+# 配置先: <インストール先>/config/plugins.yml （本体＝実行体の直下。各プロジェクトではない）
+# `ai-harness-main --update` がこの定義に従い、各リポジトリを実行体隣の repos/ へ
+# clone／pull・build し、成果の管理 DLL を lib/ へ配置する。
+# 本体（ai-harness-main 自身）は更新対象外。拡張プラグインのみを扱う。
+# 前提: git / dotnet が PATH に必要（無ければ --update は異常終了）。
+
+plugins:
+  # path:   clone 元のリポジトリ URL
+  # branch: 取得するブランチ（未指定は main）
+  - path: https://github.com/HatoriIchigo/ai-harness-file-rules
+    branch: main
