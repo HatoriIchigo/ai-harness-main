@@ -5,6 +5,13 @@
 # 本体（ai-harness-main 自身）は更新対象外。拡張プラグインのみを扱う。
 # 前提: git / dotnet が PATH に必要（無ければ --update は異常終了）。
 
+# 本体（ai-harness-main 自身）の取得元。--update はプラグイン更新後、この定義で本体を tmp へ
+# clone／publish し、稼働中の実行体を置換する（自己更新）。省略時は下記の既定値。
+# 置換は tmp の新バイナリ（--apply-update）が daemon 停止→退避→上書き→検証→再起動まで行う。
+self:
+  path: https://github.com/HatoriIchigo/ai-harness-main
+  branch: main
+
 # 拡張プラグインがビルド時に ProjectReference で参照する共有ライブラリ（baselib）。
 # 各プラグインの csproj は ..\..\ai-harness-baselib\... と兄弟ディレクトリを相対参照するため、
 # --update はプラグインのビルド前に repos/ai-harness-baselib へこれを用意する。

@@ -49,64 +49,87 @@ internal static class PluginInstaller
             return ExitError;
         }
 
-        if (config.Plugins.Count == 0)
-        {
-            Console.WriteLine("plugins.yml にインストール対象なし。");
-            return ExitOk;
-        }
-
         Directory.CreateDirectory(InstallPaths.ReposDir);
         Directory.CreateDirectory(InstallPaths.LibDir);
 
-        // 拡張プラグインは baselib を兄弟ディレクトリ相対参照（..\..\ai-harness-baselib\...）でビルド時参照する。
-        // プラグインのビルド前に repos/ai-harness-baselib へ用意する。ここが無いと全プラグインのビルドが失敗する。
-        // baselib は「本体（ai-harness-main）」ではなくプラグインのビルド依存。稼働中の本体バイナリは差し替えない。
-        try
+        // ---- プラグイン更新（同期） ----
+        if (config.Plugins.Count > 0)
         {
-            Console.WriteLine($"==== baselib: {config.Baselib.Path} ({config.Baselib.Branch}) ====");
-            var baselibDir = Path.Combine(InstallPaths.ReposDir, BaselibDirName);
-            CloneOrUpdate(config.Baselib.Path, config.Baselib.Branch, baselibDir);
-        }
-        catch (Exception ex)
-        {
-            Console.Error.WriteLine($"baselib の用意に失敗（プラグインをビルドできない）: {ex.Message}");
-            return ExitError;
-        }
-
-        var failed = new List<string>();
-        var installed = new List<string>();
-
-        foreach (var entry in config.Plugins)
-        {
-            Console.WriteLine();
-            Console.WriteLine($"==== {entry.Path} ({entry.Branch}) ====");
+            // 拡張プラグインは baselib を兄弟ディレクトリ相対参照（..\..\ai-harness-baselib\...）でビルド時参照する。
+            // プラグインのビルド前に repos/ai-harness-baselib へ用意する。ここが無いと全プラグインのビルドが失敗する。
+            // baselib は「本体（ai-harness-main）」ではなくプラグインのビルド依存。稼働中の本体バイナリは差し替えない。
             try
             {
-                var name = InstallOne(entry);
-                installed.Add(name);
+                Console.WriteLine($"==== baselib: {config.Baselib.Path} ({config.Baselib.Branch}) ====");
+                var baselibDir = Path.Combine(InstallPaths.ReposDir, BaselibDirName);
+                CloneOrUpdate(config.Baselib.Path, config.Baselib.Branch, baselibDir);
             }
             catch (Exception ex)
             {
-                Console.Error.WriteLine($"失敗: {entry.Path} — {ex.Message}");
-                failed.Add(entry.Path);
+                Console.Error.WriteLine($"baselib の用意に失敗（プラグインをビルドできない）: {ex.Message}");
+                return ExitError;
+            }
+
+            var failed = new List<string>();
+            var installed = new List<string>();
+            foreach (var entry in config.Plugins)
+            {
+                Console.WriteLine();
+                Console.WriteLine($"==== {entry.Path} ({entry.Branch}) ====");
+                try
+                {
+                    installed.Add(InstallOne(entry));
+                }
+                catch (Exception ex)
+                {
+                    Console.Error.WriteLine($"失敗: {entry.Path} — {ex.Message}");
+                    failed.Add(entry.Path);
+                }
+            }
+
+            Console.WriteLine();
+            Console.WriteLine($"プラグイン: 成功 {installed.Count} 件 / 失敗 {failed.Count} 件。");
+            if (failed.Count > 0)
+            {
+                // プラグインが壊れている状態で本体を差し替えない（まず環境を直す）。
+                return ExitError;
             }
         }
-
-        Console.WriteLine();
-        Console.WriteLine($"インストール成功 {installed.Count} 件 / 失敗 {failed.Count} 件。");
-
-        if (failed.Count > 0)
+        else
         {
-            return ExitError;
+            Console.WriteLine("plugins.yml にプラグイン対象なし（本体更新のみ実施）。");
         }
 
-        // lib（プラグイン DLL）が変わったため、稼働中の daemon を再起動して反映する。
+        // ---- 本体自己更新（新版を tmp へ publish → applier へハンドオフ） ----
+        bool handedOff = false;
+        var selfCode = ExitOk;
+        try
+        {
+            Console.WriteLine();
+            Console.WriteLine($"==== self: {config.Self.Path} ({config.Self.Branch}) ====");
+            handedOff = SelfUpdater.Run(config.Self, config.Baselib);
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"本体更新に失敗（本体は据え置き）: {ex.Message}");
+            selfCode = ExitError;
+        }
+
+        if (handedOff)
+        {
+            // applier が daemon 停止→exe 置換→再起動まで行う（新 lib と新バイナリの両方を反映）。
+            // Windows は自プロセス終了が置換の条件のため、置換結果はここでは同期で分からない（logs/ で確認）。
+            Console.WriteLine("本体更新をバックグラウンドで適用中。結果は logs/ を参照。");
+            return ExitOk;
+        }
+
+        // ハンドオフ無し（本体更新をスキップ／失敗）: プラグイン変更を反映するため daemon を再起動する。
         if (Daemon.IsRunning())
         {
-            Console.WriteLine("daemon を再起動して新しいプラグインを反映。");
+            Console.WriteLine("daemon を再起動して変更を反映。");
             Daemon.Restart();
         }
-        return ExitOk;
+        return selfCode;
     }
 
     /// <summary>
@@ -143,7 +166,7 @@ internal static class PluginInstaller
     /// <paramref name="repoDir"/> にリポジトリを用意する。既存（<c>.git</c> あり）なら
     /// <paramref name="branch"/> を fetch して <c>reset --hard FETCH_HEAD</c> で最新化、無ければ shallow clone。
     /// </summary>
-    private static void CloneOrUpdate(string url, string branch, string repoDir)
+    internal static void CloneOrUpdate(string url, string branch, string repoDir)
     {
         if (Directory.Exists(Path.Combine(repoDir, ".git")))
         {
@@ -179,7 +202,7 @@ internal static class PluginInstaller
     /// リポジトリ内の csproj を特定する。bin／obj 配下は除外。
     /// リポジトリ名と一致するものを優先。単一ならそれを使う。複数で一致無しは曖昧として例外。
     /// </summary>
-    private static string FindCsproj(string repoDir, string name)
+    internal static string FindCsproj(string repoDir, string name)
     {
         // bin／obj は「リポジトリ内の」相対パスで判定する。インストール先自体が bin/ 配下（例:
         // 開発時の bin/Release/net10.0）でも、絶対パスの bin を誤検出しないようにする。
@@ -214,7 +237,7 @@ internal static class PluginInstaller
     }
 
     /// <summary>リポジトリ URL から末尾のリポジトリ名を取り出す（末尾スラッシュ・<c>.git</c> を除去）。</summary>
-    private static string RepoName(string url)
+    internal static string RepoName(string url)
     {
         var trimmed = url.TrimEnd('/');
         var slash = trimmed.LastIndexOf('/');
@@ -231,7 +254,7 @@ internal static class PluginInstaller
     }
 
     /// <summary><paramref name="file"/> を実行し、非 0 終了なら例外。出力は親コンソールへそのまま流す。</summary>
-    private static void RunOrThrow(string file, IReadOnlyList<string> args)
+    internal static void RunOrThrow(string file, IReadOnlyList<string> args)
     {
         var psi = new ProcessStartInfo(file) { UseShellExecute = false };
         foreach (var a in args)

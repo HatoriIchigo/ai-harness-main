@@ -10,10 +10,15 @@ namespace ai_harness_main;
 /// </summary>
 internal static class HarnessPipe
 {
-    public static string Name()
+    public static string Name() => NameFor(AppContext.BaseDirectory);
+
+    /// <summary>
+    /// 指定した実行体ディレクトリ基準でパイプ名を算出する。自己更新の applier は tmp の新バイナリから動くため、
+    /// インストール先（置換対象 exe のディレクトリ）基準で稼働中 daemon のパイプ名を求めるのに使う。
+    /// </summary>
+    public static string NameFor(string baseDir)
     {
-        var key = AppContext.BaseDirectory;
-        var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(key)));
+        var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(baseDir)));
         return $"ai-harness-{hash[..16]}";
     }
 }

@@ -20,6 +20,18 @@ internal sealed class PluginsConfig
     /// <summary>baselib の既定ブランチ。</summary>
     public const string DefaultBaselibBranch = "main";
 
+    /// <summary>本体（ai-harness-main）リポジトリの既定 URL（<c>self</c> 未指定時に使う）。</summary>
+    public const string DefaultSelfPath = "https://github.com/HatoriIchigo/ai-harness-main";
+
+    /// <summary>本体の既定ブランチ。</summary>
+    public const string DefaultSelfBranch = "main";
+
+    /// <summary>
+    /// 本体（ai-harness-main 自身）の取得元。<c>--update</c> はプラグイン更新後にこの定義で本体を
+    /// tmp へ clone／publish し、稼働中の実行体を置換する（自己更新）。<c>self</c> 未指定は既定値。
+    /// </summary>
+    public required PluginEntry Self { get; init; }
+
     /// <summary>
     /// 拡張プラグインが <c>ProjectReference</c> で参照する共有ライブラリ（baselib）の取得元。
     /// 各プラグインの csproj は <c>..\..\ai-harness-baselib\...</c> と兄弟ディレクトリを相対参照するため、
@@ -82,12 +94,23 @@ internal sealed class PluginsConfig
                 : model.Baselib.Branch.Trim(),
         };
 
-        return new PluginsConfig { Baselib = baselib, Plugins = entries };
+        var self = new PluginEntry
+        {
+            Path = string.IsNullOrWhiteSpace(model?.Self?.Path)
+                ? DefaultSelfPath
+                : model.Self.Path.Trim(),
+            Branch = string.IsNullOrWhiteSpace(model?.Self?.Branch)
+                ? DefaultSelfBranch
+                : model.Self.Branch.Trim(),
+        };
+
+        return new PluginsConfig { Self = self, Baselib = baselib, Plugins = entries };
     }
 
     /// <summary>plugins.yml のデシリアライズ用 DTO。</summary>
     private sealed class PluginsYaml
     {
+        public PluginEntryYaml? Self { get; set; }
         public PluginEntryYaml? Baselib { get; set; }
         public List<PluginEntryYaml>? Plugins { get; set; }
     }
