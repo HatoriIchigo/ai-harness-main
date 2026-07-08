@@ -58,6 +58,21 @@ internal static class PluginInstaller
         Directory.CreateDirectory(InstallPaths.ReposDir);
         Directory.CreateDirectory(InstallPaths.LibDir);
 
+        // 拡張プラグインは baselib を兄弟ディレクトリ相対参照（..\..\ai-harness-baselib\...）でビルド時参照する。
+        // プラグインのビルド前に repos/ai-harness-baselib へ用意する。ここが無いと全プラグインのビルドが失敗する。
+        // baselib は「本体（ai-harness-main）」ではなくプラグインのビルド依存。稼働中の本体バイナリは差し替えない。
+        try
+        {
+            Console.WriteLine($"==== baselib: {config.Baselib.Path} ({config.Baselib.Branch}) ====");
+            var baselibDir = Path.Combine(InstallPaths.ReposDir, BaselibDirName);
+            CloneOrUpdate(config.Baselib.Path, config.Baselib.Branch, baselibDir);
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"baselib の用意に失敗（プラグインをビルドできない）: {ex.Message}");
+            return ExitError;
+        }
+
         var failed = new List<string>();
         var installed = new List<string>();
 
@@ -94,25 +109,19 @@ internal static class PluginInstaller
         return ExitOk;
     }
 
+    /// <summary>
+    /// repos/ai-harness-baselib のディレクトリ名（固定）。プラグインの相対参照
+    /// <c>..\..\ai-harness-baselib\...</c> が解決するよう、clone 先はこの名前に固定する。
+    /// </summary>
+    private const string BaselibDirName = "ai-harness-baselib";
+
     /// <summary>1 プラグインを clone／pull・build・配置する。成功でリポジトリ名を返す。失敗は例外。</summary>
     private static string InstallOne(PluginsConfig.PluginEntry entry)
     {
         var name = RepoName(entry.Path);
         var repoDir = Path.Combine(InstallPaths.ReposDir, name);
 
-        // clone または更新（shallow）。
-        if (Directory.Exists(Path.Combine(repoDir, ".git")))
-        {
-            Console.WriteLine($"更新: {repoDir}");
-            RunOrThrow("git", ["-C", repoDir, "fetch", "--depth", "1", "origin", entry.Branch]);
-            RunOrThrow("git", ["-C", repoDir, "reset", "--hard", "FETCH_HEAD"]);
-        }
-        else
-        {
-            Console.WriteLine($"clone: {entry.Path} -> {repoDir}");
-            RunOrThrow("git",
-                ["clone", "--depth", "1", "--branch", entry.Branch, entry.Path, repoDir]);
-        }
+        CloneOrUpdate(entry.Path, entry.Branch, repoDir);
 
         // build（管理 DLL のみを専用出力先へ）。
         var csproj = FindCsproj(repoDir, name);
@@ -128,6 +137,25 @@ internal static class PluginInstaller
         }
         Console.WriteLine($"配置: {copied} 個の DLL を {InstallPaths.LibDir} へ");
         return name;
+    }
+
+    /// <summary>
+    /// <paramref name="repoDir"/> にリポジトリを用意する。既存（<c>.git</c> あり）なら
+    /// <paramref name="branch"/> を fetch して <c>reset --hard FETCH_HEAD</c> で最新化、無ければ shallow clone。
+    /// </summary>
+    private static void CloneOrUpdate(string url, string branch, string repoDir)
+    {
+        if (Directory.Exists(Path.Combine(repoDir, ".git")))
+        {
+            Console.WriteLine($"更新: {repoDir}");
+            RunOrThrow("git", ["-C", repoDir, "fetch", "--depth", "1", "origin", branch]);
+            RunOrThrow("git", ["-C", repoDir, "reset", "--hard", "FETCH_HEAD"]);
+        }
+        else
+        {
+            Console.WriteLine($"clone: {url} -> {repoDir}");
+            RunOrThrow("git", ["clone", "--depth", "1", "--branch", branch, url, repoDir]);
+        }
     }
 
     /// <summary>build 出力から baselib を除く *.dll を lib/ へ上書きコピーし、コピー数を返す。</summary>

@@ -31,20 +31,30 @@
 成果の管理 DLL を `<実行体>/lib/` へ配置する。本体（`ai-harness-main` 自身）は更新対象外。
 
 ```yaml
+# 拡張プラグインがビルド時に ProjectReference で参照する共有ライブラリ（baselib）。省略時は既定値。
+baselib:
+  path: https://github.com/HatoriIchigo/ai-harness-baselib
+  branch: main
+
 plugins:
   # path:   clone 元のリポジトリ URL
   # branch: 取得するブランチ（未指定は main）
-  - path: https://github.com/HatoriIchiogo/ai-harness-file-rules
+  - path: https://github.com/HatoriIchigo/ai-harness-file-rules
     branch: main
 ```
 
 | 項目 | 内容 |
 |---|---|
 | 前提 | `git`／`dotnet` が PATH に必要。無ければ `--update` は異常終了（非 0）で何もしない |
+| baselib | プラグインより先に `repos/ai-harness-baselib` へ用意。各プラグインの csproj が `..\..\ai-harness-baselib\...` と兄弟ディレクトリを相対参照するため必須。用意に失敗したら以降を中止して異常終了 |
 | 更新 | 既に `repos/<名前>` があれば `git fetch --depth 1` ＋ `reset --hard FETCH_HEAD` で最新化。無ければ shallow clone |
 | build | リポジトリ内の csproj（名前一致を優先）を `dotnet build -c Release` |
 | 配置 | build 出力の `*.dll`（`ai-harness-baselib.dll` は除外）を `lib/` へ上書きコピー |
 | 反映 | 配置後、稼働中の daemon を自動 `--restart`（DLL 差し替え反映） |
+
+> `baselib` は「本体（`ai-harness-main` 自身）」ではなく**プラグインのビルド依存**。`repos/` 配下に
+> プラグインと**兄弟**として置くことで各プラグインの相対 `ProjectReference` が解決する。稼働中の本体
+> バイナリは差し替えない。clone 先ディレクトリ名は相対参照に合わせ `ai-harness-baselib` に固定。
 
 > `--update` で `lib/` に入れただけではプラグインは発火しない。各プロジェクトの `common.yml` の
 > `tools` で当該 PluginName を `true` にして初めて有効化される（インストールと有効化は別）。
