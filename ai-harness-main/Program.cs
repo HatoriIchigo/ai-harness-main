@@ -95,6 +95,11 @@ public static class Program
                 return await RunInfoAsync(mode, options).ConfigureAwait(false);
             }
 
+            case "--version":
+            case "-v":
+                UseUtf8Output();
+                return VersionCommand.Run();
+
             case "--help":
             case "-h":
                 UseUtf8Output();

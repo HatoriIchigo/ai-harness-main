@@ -8,6 +8,9 @@
     <LangVersion>latest</LangVersion>
     <RootNamespace>ai_harness_main</RootNamespace>
     <AssemblyName>ai-harness-main</AssemblyName>
+    <!-- 数値版は SemVer 準拠が必須（AssemblyVersion に解析される）。表示用の版だけ α を付ける。 -->
+    <Version>0.0.3</Version>
+    <InformationalVersion>0.0.3α</InformationalVersion>
     <InvariantGlobalization>true</InvariantGlobalization>
     <!-- bridge モードは hook ごとに起動されるため起動速度を優先。 -->
     <PublishReadyToRun>true</PublishReadyToRun>

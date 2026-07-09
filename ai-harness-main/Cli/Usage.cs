@@ -33,6 +33,7 @@ internal static class Usage
             --filter <レベル,…>     trace / debug / info / warn / error
             --deny                  deny の監査レコードのみ
 
+          --version, -v             版・ランタイム・実行体パスを表示する
           --help, -h                この使い方を表示する
         """;
 }
