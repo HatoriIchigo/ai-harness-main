@@ -83,6 +83,7 @@ Claude Code の `settings.json` では hook コマンドに **`ai-harness-main`*
 | `--logs [プロジェクト]` | 無指定は実行体自身のログ、指定時はそのプロジェクトのログを新しい順に表示 |
 | `--plugin [プロジェクト]` | 無指定は `lib/` のプラグイン一覧、指定時はそのプロジェクトでの有効/無効を表示 |
 | `--validate [プロジェクト]` | 設定で hook が通る状態か検証（無指定は cwd から解決）。0=成功 / 1=失敗 |
+| `--doctor` | この配置でハーネスが機能するか診断（`lib`・native・daemon・`git`/`dotnet`）。0=致命的な問題なし / 1=error あり |
 | `--version` / `-v` | 版・ランタイム・実行体パスを表示 |
 | `--help` / `-h` | 使い方を表示 |
 
@@ -110,6 +111,15 @@ ai-harness-main --validate C:\Users\project1
 
 `common.yml` が無いプロジェクトはハーネス対象外なので成功（hook は素通り）。`common.yml` が壊れている、
 `tools` で有効化したプラグインが `lib` に無い・設定 YAML が無い・`Init` に失敗する場合は失敗（1）を返す。
+
+### 環境の診断
+
+`--doctor` は `lib/` の DLL、tree-sitter の native grammar（実際にロードを試す）、`resources/`、
+ログ出力先、daemon の稼働、`--update` が要求する `git`／`dotnet` を一通り確かめる。
+
+判定は「失敗すると何が壊れるか」で決まる。プラグインが 1 つも動かなくなる `lib/` の欠落は **error**（1）、
+tree-sitter プラグインや自己更新だけが使えなくなるものは **warn**（0）。native の欠落は「AST 解析に失敗して
+フェイルクローズ」という遠回りな症状になるため、ここで直接切り分けられる。
 
 ### deny の監査レコード
 

@@ -23,8 +23,8 @@ internal static class VersionCommand
     /// <summary>コミット sha は先頭からこの長さだけ見せる。</summary>
     private const int ShaLength = 7;
 
-    /// <summary>表示用の版。属性が無ければアセンブリの数値版へ倒す。</summary>
-    private static string Version()
+    /// <summary>表示用の版。属性が無ければアセンブリの数値版へ倒す。<c>--doctor</c> も使う。</summary>
+    public static string Version()
     {
         var assembly = Assembly.GetExecutingAssembly();
         var informational = assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>();

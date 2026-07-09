@@ -83,6 +83,7 @@ public static class Program
                 Console.WriteLine("ai-harness-main OK");
                 return ExitAllow;
 
+            case "--doctor":
             case "--project":
             case "--logs":
             case "--plugin":
@@ -126,15 +127,18 @@ public static class Program
     {
         UseUtf8Output();
 
-        if (mode == "--project")
+        // 引数をまったく取らないモード。
+        if (mode is "--project" or "--doctor")
         {
             if (options.Project is not null || options.Take is not null
                 || options.Levels is not null || options.DenyOnly)
             {
-                await Console.Error.WriteLineAsync("--project は引数を取りません。").ConfigureAwait(false);
+                await Console.Error.WriteLineAsync($"{mode} は引数を取りません。").ConfigureAwait(false);
                 return ExitUsage;
             }
-            return await ProjectsCommand.RunAsync().ConfigureAwait(false);
+            return mode == "--doctor"
+                ? await DoctorCommand.RunAsync().ConfigureAwait(false)
+                : await ProjectsCommand.RunAsync().ConfigureAwait(false);
         }
 
         if (mode == "--logs")

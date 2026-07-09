@@ -26,6 +26,7 @@ internal static class Usage
         検証:
           --validate [プロジェクト] 設定で hook が通る状態か確かめる（無指定は cwd から解決）。
                                     0=成功 / 1=失敗。daemon に触れずログも書かない
+          --doctor                  この配置でハーネスが機能するか診断する（lib・native・daemon・git/dotnet）
 
         情報表示:
           --project                 daemon がメモリに展開しているプロジェクト一覧
