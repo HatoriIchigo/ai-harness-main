@@ -28,8 +28,13 @@ namespace ai_harness_main;
 ///   --plugin     … lib/ にインストール済みのプラグイン一覧。
 ///   --plugin &lt;プロジェクト&gt; … そのプロジェクトで有効化されているか。
 ///
-///   --logs には <c>--n &lt;件数&gt;</c>（新しい順に上位 N 件）と
-///   <c>--filter &lt;レベル,…&gt;</c>（レベル絞り込み）を付けられる。
+///   --logs には <c>--n &lt;件数&gt;</c>（新しい順に上位 N 件）・<c>--filter &lt;レベル,…&gt;</c>（レベル絞り込み）・
+///   <c>--deny</c>（deny の監査レコードのみ）を付けられる。
+///
+///   --help / -h  … 使い方を表示。
+///
+/// bridge になるのは<b>引数なし</b>のときだけ。未知の引数は使い方を出して 1 で終わる（typo を
+/// hook として扱わない）。
 ///
 /// 終了コード（bridge / standalone の Claude hook 規約）: 0=許可 / 2=deny。
 /// 内部エラー・不正入力・検証不能は**フェイルクローズ**で 2（ブロック）に倒す。例外は bridge が daemon に
@@ -90,8 +95,23 @@ public static class Program
                 return await RunInfoAsync(mode, options).ConfigureAwait(false);
             }
 
-            default:
+            case "--help":
+            case "-h":
+                UseUtf8Output();
+                Console.Out.WriteLine(Usage.Text);
+                return ExitAllow;
+
+            case null:
+                // 引数なしのときだけ bridge。Claude Code の hook はこの形で叩く。
                 return await Bridge.RunAsync().ConfigureAwait(false);
+
+            default:
+                // 未知の引数を bridge に落とすと、端末では stdin 待ちで固まり、空 stdin では
+                // 「hookJson が空」というフェイルクローズになる。typo を hook として扱わない。
+                UseUtf8Output();
+                await Console.Error.WriteLineAsync($"不明な引数: {mode}").ConfigureAwait(false);
+                await Console.Error.WriteLineAsync(Usage.Text).ConfigureAwait(false);
+                return ExitUsage;
         }
     }
 
