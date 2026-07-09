@@ -23,6 +23,10 @@ internal static class LogsCommand
         }
 
         IEnumerable<LogRecord> records = LogReader.ReadNewestFirst(logDir);
+        if (options.DenyOnly)
+        {
+            records = records.Where(r => r.IsDeny);
+        }
         if (options.Levels is { } levels)
         {
             records = records.Where(r => levels.Contains(r.Level));

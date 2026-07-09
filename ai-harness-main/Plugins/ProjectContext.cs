@@ -95,8 +95,10 @@ internal sealed class ProjectContext : IDisposable
         // common.yml を直せばホットリロードでコンテキストが再構築され、ブロックは解除される。
         if (config.LoadError is { } configError)
         {
-            logger.Write(LogLevel.Error, $"common.yml 不正のためブロック（フェイルクローズ）: {configError}");
-            return new HostDecision(2, $"common.yml の読み込みに失敗しています（フェイルクローズ）。設定を修正してください: {configError}");
+            var reason = $"common.yml の読み込みに失敗しています（フェイルクローズ）。設定を修正してください: {configError}";
+            logger.WriteDeny(new DenyEvent(
+                "claude", DenyKind.FailClose, reason, data.ToolName, data.HookEventName));
+            return new HostDecision(2, reason);
         }
 
         // state 全体を読み取り用に注入（発火時点のスナップショット。共有参照ゆえプラグインは書き換えない）。
@@ -111,6 +113,12 @@ internal sealed class ProjectContext : IDisposable
 
         var outcome = await new PluginHost(logger.Emit, config.MaxParallel, config.ConfigDir)
             .RunAsync(types, data, ct).ConfigureAwait(false);
+
+        // deny は監査レコードとして 1 件ずつ残す（集約後の理由文字列からは個々の由来を復元できない）。
+        foreach (var deny in outcome.Denies)
+        {
+            logger.WriteDeny(deny);
+        }
 
         // 各プラグインが返した state スライスを名前空間ごとに反映（差分があれば書き戻す）。
         _stateStore.ApplyAndSave(outcome.StateUpdates);

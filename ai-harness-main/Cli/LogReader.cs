@@ -91,7 +91,12 @@ internal static class LogReader
 
             var source = root.TryGetProperty("source", out var s) ? s.GetString() ?? "" : "";
             var message = root.TryGetProperty("message", out var m) ? m.GetString() ?? "" : "";
-            record = new LogRecord(timestamp, level, source, message);
+
+            // 構造化フィールドは deny の監査レコードにのみ在る。古い行には無いので既定値へ倒す。
+            var isDeny = root.TryGetProperty("event", out var e) && e.GetString() == "deny";
+            var kind = isDeny && root.TryGetProperty("kind", out var k) ? k.GetString() : null;
+
+            record = new LogRecord(timestamp, level, source, message, isDeny, kind);
             return true;
         }
         catch (JsonException)

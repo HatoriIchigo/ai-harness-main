@@ -45,9 +45,19 @@ ai-harness-main  ──┐
 | `--plugin [プロジェクト]` | 無指定は `lib/` のプラグイン一覧、指定時はそのプロジェクトでの有効/無効 |
 
 情報表示モード（`--project`／`--logs`／`--plugin`）は hook 規約の外にあり、成功 0・引数エラー 1 を返す。
-`--logs` は `--n <件数>`（新しい順に上位 N 件）と `--filter <レベル,…>`（`trace`／`debug`／`info`／`warn`／`error`）を
-取り、フィルタしてから件数を切る。`--project` は daemon へ照会するが**起こさない**（未起動なら空一覧）。
-`--plugin` は daemon を介さず `lib/` と `common.yml` を直接読む。
+`--logs` は `--n <件数>`（新しい順に上位 N 件）・`--filter <レベル,…>`（`trace`／`debug`／`info`／`warn`／`error`）・
+`--deny`（deny の監査レコードのみ）を取り、フィルタしてから件数を切る。`--project` は daemon へ照会するが
+**起こさない**（未起動なら空一覧）。`--plugin` は daemon を介さず `lib/` と `common.yml` を直接読む。
+
+## deny の記録
+
+deny は集約されて Claude Code へ返るが、集約後の理由文字列からは「どのプラグインがなぜ止めたか」を
+復元できない。そこで `PluginHost` は deny したプラグインごとに `DenyEvent` を起こし、`ProjectContext` が
+1 件ずつ構造化ログとして記録する（`event=deny`／`kind`／`plugin`／`tool`／`hookEvent`／`reason`）。
+
+由来を `DenyKind` で 2 つに分ける。**`rule`**（プラグインがルールに従って拒否＝設計どおり、`warn`）と、
+**`failclose`**（生成失敗・クラッシュ・`common.yml` 不正など検証できずにブロック＝ハーネス側の異常、`error`）。
+両者は監査上まったく意味が違うため、レベルで区別して `--logs --deny --filter error` が前者を拾わないようにする。
 
 ## コンポーネント
 
@@ -79,7 +89,8 @@ ai-harness-main  ──┐
 | `Ipc/Framing.cs` | 長さ前置フレーミング |
 | `Config/InstallPaths.cs` | 実行体基準のグローバルパス（`lib`／`run`／グローバル log） |
 | `Config/ProjectConfig.cs` | プロジェクト個別設定（`<ルート>/.claude/harness/config/common.yml` ロード） |
-| `Logging/Logger.cs` | レベルフィルタ＋ログファイルへ集約（出力先ディレクトリは引数） |
+| `Logging/Logger.cs` | レベルフィルタ＋ログファイルへ集約（出力先ディレクトリは引数）。構造化フィールドの付加 |
+| `Logging/DenyEvent.cs` | deny の監査レコード（由来＝`rule`／`failclose`、対象ツール、理由） |
 
 ## マルチテナント
 

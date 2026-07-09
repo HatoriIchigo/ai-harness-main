@@ -6,7 +6,7 @@ namespace ai_harness_main;
 /// 情報表示系サブコマンド（<c>--project</c> / <c>--logs</c> / <c>--plugin</c>）の引数。
 ///
 /// <code>
-///   --logs   [プロジェクトルート] [--n 件数] [--filter warn,debug]
+///   --logs   [プロジェクトルート] [--n 件数] [--filter warn,debug] [--deny]
 ///   --plugin [プロジェクトルート]
 ///   --project
 /// </code>
@@ -25,6 +25,9 @@ internal sealed class CliOptions
     /// <summary>表示対象のログレベル（<c>--filter</c>）。未指定は <c>null</c>＝全レベル。</summary>
     public IReadOnlySet<LogLevel>? Levels { get; private init; }
 
+    /// <summary>deny の監査レコードだけを表示する（<c>--deny</c>）。</summary>
+    public bool DenyOnly { get; private init; }
+
     /// <summary>
     /// <paramref name="args"/> の 1 番目以降（0 番目はモード名）を解釈する。
     /// 失敗時は <paramref name="error"/> に利用者向けの理由を入れて <c>false</c>。
@@ -34,6 +37,7 @@ internal sealed class CliOptions
         string? project = null;
         int? take = null;
         HashSet<LogLevel>? levels = null;
+        var denyOnly = false;
         error = "";
         options = new CliOptions();
 
@@ -50,6 +54,10 @@ internal sealed class CliOptions
                         return false;
                     }
                     take = n;
+                    break;
+
+                case "--deny":
+                    denyOnly = true;
                     break;
 
                 case "--filter":
@@ -82,7 +90,7 @@ internal sealed class CliOptions
             }
         }
 
-        options = new CliOptions { Project = project, Take = take, Levels = levels };
+        options = new CliOptions { Project = project, Take = take, Levels = levels, DenyOnly = denyOnly };
         return true;
     }
 

@@ -102,7 +102,8 @@ public static class Program
 
         if (mode == "--project")
         {
-            if (options.Project is not null || options.Take is not null || options.Levels is not null)
+            if (options.Project is not null || options.Take is not null
+                || options.Levels is not null || options.DenyOnly)
             {
                 await Console.Error.WriteLineAsync("--project は引数を取りません。").ConfigureAwait(false);
                 return ExitUsage;
@@ -115,9 +116,9 @@ public static class Program
             return LogsCommand.Run(options);
         }
 
-        if (options.Take is not null || options.Levels is not null)
+        if (options.Take is not null || options.Levels is not null || options.DenyOnly)
         {
-            await Console.Error.WriteLineAsync("--plugin は --n / --filter を取りません。").ConfigureAwait(false);
+            await Console.Error.WriteLineAsync("--plugin は --n / --filter / --deny を取りません。").ConfigureAwait(false);
             return ExitUsage;
         }
         return PluginsCommand.Run(options);

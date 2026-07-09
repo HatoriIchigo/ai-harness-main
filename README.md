@@ -83,14 +83,23 @@ Claude Code の `settings.json` では hook コマンドに **`ai-harness-main`*
 | `--logs [プロジェクト]` | 無指定は実行体自身のログ、指定時はそのプロジェクトのログを新しい順に表示 |
 | `--plugin [プロジェクト]` | 無指定は `lib/` のプラグイン一覧、指定時はそのプロジェクトでの有効/無効を表示 |
 
-`--logs` は表示件数と重大度で絞れる。フィルタしてから件数を切るため、`--filter` 併用時の `--n` は
-「該当ログの上位 N 件」を意味する。
+`--logs` は表示件数・重大度・deny の有無で絞れる。フィルタしてから件数を切るため、`--filter` 併用時の
+`--n` は「該当ログの上位 N 件」を意味する。
 
 ```sh
 ai-harness-main --logs --n 35                        # 実行体のログを新しい順に 35 件
 ai-harness-main --logs C:\Users\project1 --filter warn,error
-ai-harness-main --logs C:\Users\project1 --filter warn, debug --n 35
+ai-harness-main --logs C:\Users\project1 --deny      # deny の監査レコードだけ
 ```
+
+### deny の監査レコード
+
+deny は通常のログ行に加えて**構造化フィールド**（`event=deny`／`kind`／`plugin`／`tool`／`hookEvent`／
+`reason`）つきで `logs/<日付>.jsonl` に記録される。`--deny` はこの行だけを表示する。
+
+由来はレベルで分かれる。**ルールによる deny は `warn`**（設計どおりの動作）、**フェイルクローズは `error`**
+（プラグインを検証できずにブロックした＝ハーネス側の異常）。したがって `--deny --filter error` は
+「ハーネスが不調でブロックした件」だけを、`--deny --filter warn` は「ルールが実際に効いた件」だけを拾う。
 
 ## ドキュメント
 

@@ -18,8 +18,11 @@ internal sealed record HostDecision(int ExitCode, string? Reason, string? Additi
 /// </summary>
 /// <param name="Decision">deny 先勝ちで集約した最終判定。</param>
 /// <param name="StateUpdates">名前空間ごとの state 更新。<see cref="StateStore.ApplyAndSave"/> へ渡す。</param>
+/// <param name="Denies">deny したプラグインごとの監査レコード（許可なら空）。</param>
 internal sealed record HostOutcome(
-    HostDecision Decision, IReadOnlyDictionary<string, JsonNode> StateUpdates);
+    HostDecision Decision,
+    IReadOnlyDictionary<string, JsonNode> StateUpdates,
+    IReadOnlyList<DenyEvent> Denies);
 
 /// <summary>
 /// 発見済みプラグイン型から、リクエスト毎にインスタンスを生成して並列発火し、
@@ -47,7 +50,7 @@ internal sealed class PluginHost
     {
         if (pluginTypes.Count == 0)
         {
-            return new HostOutcome(new HostDecision(0, null), EmptyUpdates);
+            return new HostOutcome(new HostDecision(0, null), EmptyUpdates, []);
         }
 
         using var gate = new SemaphoreSlim(_maxParallel);
@@ -59,7 +62,7 @@ internal sealed class PluginHost
 
         // 各プラグインが返した state スライスを PluginName で束ねる（null＝変更なしは除外）。
         var updates = new Dictionary<string, JsonNode>(StringComparer.Ordinal);
-        foreach (var (name, result) in results)
+        foreach (var (name, result, _) in results)
         {
             if (result.State is { } slice)
             {
@@ -67,10 +70,20 @@ internal sealed class PluginHost
             }
         }
 
-        return new HostOutcome(decision, updates);
+        // deny したプラグインごとに監査レコードを起こす。deny 先勝ちで集約された後でも、
+        // 「どのプラグインがなぜ止めたか」は個別に残す（集約後の理由文字列からは復元できない）。
+        var denies = results
+            .Where(r => r.Result.ExitCode != 0)
+            .Select(r => new DenyEvent(
+                r.Name, r.Kind,
+                r.Result.Reason ?? "プラグインにより拒否",
+                data.ToolName, data.HookEventName))
+            .ToList();
+
+        return new HostOutcome(decision, updates, denies);
     }
 
-    private async Task<(string Name, PluginResult Result)> RunOneAsync(
+    private async Task<PluginOutcome> RunOneAsync(
         Type type, HookData data, SemaphoreSlim gate, CancellationToken ct)
     {
         await gate.WaitAsync(ct).ConfigureAwait(false);
@@ -85,7 +98,10 @@ internal sealed class PluginHost
         }
     }
 
-    private (string Name, PluginResult Result) Execute(Type type, HookData data)
+    /// <summary>1 プラグインの実行結果。<paramref name="Kind"/> は deny したときのみ意味を持つ。</summary>
+    private readonly record struct PluginOutcome(string Name, PluginResult Result, DenyKind Kind);
+
+    private PluginOutcome Execute(Type type, HookData data)
     {
         var result = new PluginResult();
 
@@ -97,10 +113,9 @@ internal sealed class PluginHost
         catch (Exception ex)
         {
             // フェイルクローズ: プラグインを生成できない＝検証できないので通さない。
-            _log(LogEntry.Error($"インスタンス生成失敗（フェイルクローズでブロック） ({type.FullName}): {ex.Message}"));
             result.ExitCode = 2;
             result.Reason = $"{type.FullName} の生成に失敗（フェイルクローズ）: {ex.Message}";
-            return (type.FullName ?? "unknown", result);
+            return new PluginOutcome(type.FullName ?? "unknown", result, DenyKind.FailClose);
         }
 
         var name = plugin.PluginName;
@@ -108,7 +123,7 @@ internal sealed class PluginHost
         // Tools/Events フィルタ: マッチしない場合は発火しない（ExitCode 0・State null のまま）。
         if (!plugin.ShouldFire(data))
         {
-            return (name, result);
+            return new PluginOutcome(name, result, DenyKind.Rule);
         }
 
         try
@@ -127,11 +142,12 @@ internal sealed class PluginHost
         {
             // フェイルクローズ: プラグインが検証を完了できなかった（クラッシュ）場合は通さない。
             // 検証を通り抜けさせるとガードとして機能しないため、当該アクションをブロックする。
-            _log(LogEntry.Error($"実行失敗（フェイルクローズでブロック）: {ex.Message}") with { Source = name });
             result.ExitCode = 2;
             result.Reason = $"{name} の検証に失敗（フェイルクローズ）: {ex.Message}";
+            return new PluginOutcome(name, result, DenyKind.FailClose);
         }
-        return (name, result);
+        // プラグインが自らルールで拒否した（例外ではない）。
+        return new PluginOutcome(name, result, DenyKind.Rule);
     }
 
     /// <summary>
