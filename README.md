@@ -79,6 +79,18 @@ Claude Code の `settings.json` では hook コマンドに **`ai-harness-main`*
 | `--stop` | 停止 |
 | `--standalone` | daemon を介さず stdin を 1 件処理して終了（テスト・フォールバック） |
 | `--update` | `config/plugins.yml` に従い拡張プラグインを `repos/` へ clone／build し `lib/` へ配置し、続けて本体自身も tmp へ publish して置換（自己更新）。`git`／`dotnet` 未導入なら異常終了 |
+| `--project` | 稼働中の daemon がメモリに展開しているプロジェクト一覧を表示（daemon は起こさない） |
+| `--logs [プロジェクト]` | 無指定は実行体自身のログ、指定時はそのプロジェクトのログを新しい順に表示 |
+| `--plugin [プロジェクト]` | 無指定は `lib/` のプラグイン一覧、指定時はそのプロジェクトでの有効/無効を表示 |
+
+`--logs` は表示件数と重大度で絞れる。フィルタしてから件数を切るため、`--filter` 併用時の `--n` は
+「該当ログの上位 N 件」を意味する。
+
+```sh
+ai-harness-main --logs --n 35                        # 実行体のログを新しい順に 35 件
+ai-harness-main --logs C:\Users\project1 --filter warn,error
+ai-harness-main --logs C:\Users\project1 --filter warn, debug --n 35
+```
 
 ## ドキュメント
 

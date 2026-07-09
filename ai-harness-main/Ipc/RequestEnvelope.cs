@@ -12,7 +12,10 @@ internal sealed class RequestEnvelope
     public const string TypeHook = "hook";
     public const string TypeStop = "stop";
 
-    /// <summary>リクエスト種別。<see cref="TypeHook"/> または <see cref="TypeStop"/>。</summary>
+    /// <summary>メモリ上のプロジェクト一覧の照会（<c>--project</c>）。応答は <see cref="ProjectsResponse"/>。</summary>
+    public const string TypeProjects = "projects";
+
+    /// <summary>リクエスト種別。<see cref="TypeHook"/> / <see cref="TypeStop"/> / <see cref="TypeProjects"/>。</summary>
     [JsonPropertyName("type")]
     public string Type { get; set; } = TypeHook;
 

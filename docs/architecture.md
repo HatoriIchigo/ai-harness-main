@@ -40,6 +40,14 @@ ai-harness-main  ──┐
 | `--update` | `config/plugins.yml` に従いプラグインを更新し、続けて本体自身も自己更新。詳細は [self-update.md](self-update.md) |
 | `--apply-update` | 内部モード。`--update` が publish した tmp の新バイナリが起動し、インストール先の実行体を置換 |
 | `--health` | 起動検証用。ランタイムが正常起動すれば 0 を返す（自己更新の健全性判定に使う） |
+| `--project` | 稼働中の daemon がメモリに展開しているプロジェクト一覧を表示 |
+| `--logs [プロジェクト]` | ログ表示。無指定は実行体隣の `logs/`、指定時はそのプロジェクトの `.claude/harness/logs/` |
+| `--plugin [プロジェクト]` | 無指定は `lib/` のプラグイン一覧、指定時はそのプロジェクトでの有効/無効 |
+
+情報表示モード（`--project`／`--logs`／`--plugin`）は hook 規約の外にあり、成功 0・引数エラー 1 を返す。
+`--logs` は `--n <件数>`（新しい順に上位 N 件）と `--filter <レベル,…>`（`trace`／`debug`／`info`／`warn`／`error`）を
+取り、フィルタしてから件数を切る。`--project` は daemon へ照会するが**起こさない**（未起動なら空一覧）。
+`--plugin` は daemon を介さず `lib/` と `common.yml` を直接読む。
 
 ## コンポーネント
 
@@ -48,6 +56,12 @@ ai-harness-main  ──┐
 | ファイル | 責務 |
 |---|---|
 | `Program.cs` | エントリ。モード分岐と standalone 処理 |
+| `Cli/CliOptions.cs` | 情報表示モードの引数解釈（プロジェクト位置引数・`--n`・`--filter`） |
+| `Cli/ProjectsCommand.cs` | `--project`。daemon へ照会して一覧表示 |
+| `Cli/LogsCommand.cs` | `--logs`。ログディレクトリを解決して表示 |
+| `Cli/PluginsCommand.cs` | `--plugin`。`lib/` の発見結果と `common.yml` のトグルを突き合わせ |
+| `Cli/LogReader.cs` | `*.jsonl` を新しい順に読む（追記中でも読めるよう共有オープン） |
+| `Cli/TextTable.cs` | `a \| b` 形式の等幅テーブル出力 |
 | `Bridge/Bridge.cs` | bridge モード。cwd→ルート解決、封筒生成、daemon へ送信、応答出力、未起動時の起動 |
 | `Bridge/ProjectLocator.cs` | cwd から `.claude` を上方探索しプロジェクトルートを決定 |
 | `Plugins/PluginLoader.cs` | `lib/*.dll` を走査し `PluginBase` 派生型を発見 |
@@ -56,10 +70,12 @@ ai-harness-main  ──┐
 | `Plugins/PluginHost.cs` | リクエスト毎にインスタンス生成・並列発火・deny 先勝ち集約 |
 | `Plugins/PluginLoadContext.cs` | プラグイン DLL 用 ALC。baselib は既定 ALC へ委ね型同一性を保つ |
 | `Ipc/Daemon.cs` | 常駐サーバ。マルチテナント振り分け・アイドル回収・自動停止・ensure／stop／restart |
-| `Ipc/RequestEnvelope.cs` | bridge→daemon の封筒（`type`／`projectRoot`／`hookJson`） |
+| `Ipc/RequestEnvelope.cs` | bridge／CLI→daemon の封筒（`type`＝`hook`／`stop`／`projects`、`projectRoot`、`hookJson`） |
 | `Ipc/HarnessPipe.cs` | パイプ名生成（実行体ディレクトリの SHA256） |
 | `Ipc/HookOutput.cs` | Claude へ返す hook 出力 JSON（`hookSpecificOutput.additionalContext`）の組み立て |
 | `Ipc/HookResponse.cs` | daemon→bridge の応答ペイロード |
+| `Ipc/ProjectsResponse.cs` | daemon→CLI（`--project`）の応答ペイロード |
+| `Ipc/DaemonClient.cs` | CLI から daemon への照会。daemon は起動しない |
 | `Ipc/Framing.cs` | 長さ前置フレーミング |
 | `Config/InstallPaths.cs` | 実行体基準のグローバルパス（`lib`／`run`／グローバル log） |
 | `Config/ProjectConfig.cs` | プロジェクト個別設定（`<ルート>/.claude/harness/config/common.yml` ロード） |

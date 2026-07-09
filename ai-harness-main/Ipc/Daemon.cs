@@ -167,6 +167,14 @@ internal static class Daemon
                 Environment.Exit(0);
             }
 
+            if (env.Type == RequestEnvelope.TypeProjects)
+            {
+                var projects = new ProjectsResponse { Roots = MaterializedProjectRoots() };
+                await Framing.WriteFrameAsync(
+                    server, JsonSerializer.SerializeToUtf8Bytes(projects, ResponseJsonOptions)).ConfigureAwait(false);
+                return;
+            }
+
             HostDecision decision;
             try
             {
@@ -217,6 +225,16 @@ internal static class Daemon
             throw;
         }
     }
+
+    /// <summary>
+    /// 実際にコンテキストを生成済みのプロジェクトルート一覧（辞書順）。
+    /// <see cref="Lazy{T}"/> の生成前エントリ（GetOrAdd 直後の一瞬）は「メモリ上に展開済み」ではないため除く。
+    /// </summary>
+    private static List<string> MaterializedProjectRoots() =>
+        Projects.Where(kv => kv.Value.IsValueCreated)
+                .Select(kv => kv.Key)
+                .OrderBy(root => root, StringComparer.Ordinal)
+                .ToList();
 
     // ---- アイドル回収 ----
 

@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using System.Text;
 using ai_harness_baselib;
 
 namespace ai_harness_main;
@@ -19,14 +20,27 @@ namespace ai_harness_main;
 ///                  インストール先の実行体を安全に置換する。
 ///   --health     … 起動検証用。ランタイムが正常起動できれば 0 を返す（自己更新のロールバック判定に使う）。
 ///
+/// 情報表示（人間向け。ハーネスの動作には影響しない）:
+///
+///   --project    … 稼働中の daemon がメモリに展開しているプロジェクト一覧。
+///   --logs       … 実行体自身（daemon ライフサイクル）のログ。
+///   --logs &lt;プロジェクト&gt; … そのプロジェクトのログ。
+///   --plugin     … lib/ にインストール済みのプラグイン一覧。
+///   --plugin &lt;プロジェクト&gt; … そのプロジェクトで有効化されているか。
+///
+///   --logs には <c>--n &lt;件数&gt;</c>（新しい順に上位 N 件）と
+///   <c>--filter &lt;レベル,…&gt;</c>（レベル絞り込み）を付けられる。
+///
 /// 終了コード（bridge / standalone の Claude hook 規約）: 0=許可 / 2=deny。
 /// 内部エラー・不正入力・検証不能は**フェイルクローズ**で 2（ブロック）に倒す。例外は bridge が daemon に
 /// まったく接続できない場合のみで、ロックアウト回避のため 0（許可）で継続する。
+/// 情報表示モードは hook 規約の外なので、成功 0 / 引数エラー 1 を返す。
 /// </summary>
 public static class Program
 {
     private const int ExitAllow = 0;
     private const int ExitDeny = 2;
+    private const int ExitUsage = 1;
 
     public static async Task<int> Main(string[] args)
     {
@@ -64,8 +78,66 @@ public static class Program
                 Console.WriteLine("ai-harness-main OK");
                 return ExitAllow;
 
+            case "--project":
+            case "--logs":
+            case "--plugin":
+            {
+                if (!CliOptions.TryParse(args, out var options, out var error))
+                {
+                    await Console.Error.WriteLineAsync(error).ConfigureAwait(false);
+                    return ExitUsage;
+                }
+                return await RunInfoAsync(mode, options).ConfigureAwait(false);
+            }
+
             default:
                 return await Bridge.RunAsync().ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>情報表示モードを実行する。<c>--project</c> は位置引数・オプションを取らない。</summary>
+    private static async Task<int> RunInfoAsync(string mode, CliOptions options)
+    {
+        UseUtf8Output();
+
+        if (mode == "--project")
+        {
+            if (options.Project is not null || options.Take is not null || options.Levels is not null)
+            {
+                await Console.Error.WriteLineAsync("--project は引数を取りません。").ConfigureAwait(false);
+                return ExitUsage;
+            }
+            return await ProjectsCommand.RunAsync().ConfigureAwait(false);
+        }
+
+        if (mode == "--logs")
+        {
+            return LogsCommand.Run(options);
+        }
+
+        if (options.Take is not null || options.Levels is not null)
+        {
+            await Console.Error.WriteLineAsync("--plugin は --n / --filter を取りません。").ConfigureAwait(false);
+            return ExitUsage;
+        }
+        return PluginsCommand.Run(options);
+    }
+
+    /// <summary>
+    /// 情報表示モードの stdout／stderr を UTF-8（BOM なし）にする。既定では Windows のコンソール
+    /// コードページ（cp932 等）で書かれ、パイプで読む側（ai-harness-tui）も端末も日本語が化けるため。
+    /// hook 経路（bridge／daemon）の出力は Claude Code が読むので触らない。
+    /// </summary>
+    private static void UseUtf8Output()
+    {
+        try
+        {
+            var utf8 = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
+            Console.OutputEncoding = utf8;
+        }
+        catch (IOException)
+        {
+            // コンソールハンドルが無い環境では設定できない。既定のまま続行する。
         }
     }
 
