@@ -86,6 +86,7 @@ public static class Program
             case "--project":
             case "--logs":
             case "--plugin":
+            case "--validate":
             {
                 if (!CliOptions.TryParse(args, out var options, out var error))
                 {
@@ -143,10 +144,10 @@ public static class Program
 
         if (options.Take is not null || options.Levels is not null || options.DenyOnly)
         {
-            await Console.Error.WriteLineAsync("--plugin は --n / --filter / --deny を取りません。").ConfigureAwait(false);
+            await Console.Error.WriteLineAsync($"{mode} は --n / --filter / --deny を取りません。").ConfigureAwait(false);
             return ExitUsage;
         }
-        return PluginsCommand.Run(options);
+        return mode == "--validate" ? ValidateCommand.Run(options) : PluginsCommand.Run(options);
     }
 
     /// <summary>

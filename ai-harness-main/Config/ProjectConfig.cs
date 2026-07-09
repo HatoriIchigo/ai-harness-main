@@ -105,7 +105,9 @@ internal sealed class ProjectConfig
             }
             catch (Exception ex)
             {
-                configWarning = $"{ConfigFileName} の読み込みに失敗（既定値を使用）: {ex.Message}";
+                // 「在るのに壊れている」= 何を強制すべきか判断できない。既定値では動かさず
+                // フェイルクローズする（LoadError として RunAsync がブロックに使う）。
+                configWarning = $"{ConfigFileName} の読み込みに失敗: {ex.Message}";
             }
         }
 

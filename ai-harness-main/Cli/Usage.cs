@@ -23,6 +23,10 @@ internal static class Usage
           --update                  プラグインと本体を更新する
           --health                  起動検証（ランタイムが正常起動すれば 0）
 
+        検証:
+          --validate [プロジェクト] 設定で hook が通る状態か確かめる（無指定は cwd から解決）。
+                                    0=成功 / 1=失敗。daemon に触れずログも書かない
+
         情報表示:
           --project                 daemon がメモリに展開しているプロジェクト一覧
           --logs   [プロジェクト]   ログを新しい順に表示（無指定は実行体自身のログ）
@@ -33,6 +37,7 @@ internal static class Usage
             --filter <レベル,…>     trace / debug / info / warn / error
             --deny                  deny の監査レコードのみ
 
+        その他:
           --version, -v             版・ランタイム・実行体パスを表示する
           --help, -h                この使い方を表示する
         """;

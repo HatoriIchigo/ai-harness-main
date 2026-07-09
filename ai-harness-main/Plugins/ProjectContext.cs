@@ -62,7 +62,7 @@ internal sealed class ProjectContext : IDisposable
             logger.Write(LogLevel.Warning, warning);
         }
 
-        var validation = ValidateAndInit(registry.Types, config, logger);
+        var validation = ValidateAndInit(registry.Types, config, logger.Emit);
         // state ストアは設定ホットリロード（有効プラグイン再構築）とは独立に 1 つ保持する。
         var stateStore = StateStore.Create(projectRoot, globalLog);
 
@@ -150,9 +150,12 @@ internal sealed class ProjectContext : IDisposable
     ///
     /// インスタンス生成に失敗した型は <c>PluginName</c> を取れず、有効化されているか判定できない。
     /// 「有効かもしれないものを検証できなかった」ため、こちらも安全側（ブロック）へ倒す。
+    ///
+    /// ログの宛先は <paramref name="log"/>。<c>--validate</c> から呼ぶときはログを捨てられるよう
+    /// <see cref="Logger"/> ではなくデリゲートを取る（検証がプロジェクトのログを汚さないため）。
     /// </summary>
-    private static StartupValidation ValidateAndInit(
-        IReadOnlyList<Type> types, ProjectConfig config, Logger logger)
+    public static StartupValidation ValidateAndInit(
+        IReadOnlyList<Type> types, ProjectConfig config, Action<LogEntry> log)
     {
         var toolToggles = config.ToolToggles;
         var valid = new List<Type>();
@@ -169,7 +172,7 @@ internal sealed class ProjectContext : IDisposable
             catch (Exception ex)
             {
                 // 名前が取れず有効/無効を判定できないため、無効化されている可能性があってもブロックする。
-                logger.Emit(LogEntry.Error($"インスタンス生成失敗（フェイルクローズ） ({type.FullName}): {ex.Message}"));
+                log(LogEntry.Error($"インスタンス生成失敗（フェイルクローズ） ({type.FullName}): {ex.Message}"));
                 errors.Add($"{type.FullName}: インスタンス生成に失敗（{ex.Message}）");
                 continue;
             }
@@ -180,7 +183,7 @@ internal sealed class ProjectContext : IDisposable
             // on/off 判定: tools で true のもののみ有効。未記載・false は無効（除外）。無効は検証しない。
             if (!toolToggles.TryGetValue(name, out var enabled) || !enabled)
             {
-                logger.Emit(LogEntry.Debug("無効（tools で有効化されていない）") with { Source = name });
+                log(LogEntry.Debug("無効（tools で有効化されていない）") with { Source = name });
                 continue;
             }
 
@@ -190,7 +193,7 @@ internal sealed class ProjectContext : IDisposable
             {
                 foreach (var error in toolsValidation.Errors.Concat(eventsValidation.Errors))
                 {
-                    logger.Emit(LogEntry.Error($"フィルタ検証失敗（フェイルクローズ）: {error}") with { Source = name });
+                    log(LogEntry.Error($"フィルタ検証失敗（フェイルクローズ）: {error}") with { Source = name });
                     errors.Add($"{name}: 発火条件が不正（{error}）");
                 }
                 continue;
@@ -199,7 +202,7 @@ internal sealed class ProjectContext : IDisposable
                 && plugin.FileNames is null && plugin.BashCommands is null)
             {
                 // 設定では直せないプラグイン実装側の問題。発火しないだけなのでブロックはしない。
-                logger.Emit(LogEntry.Warning(
+                log(LogEntry.Warning(
                     "Tools/Events/FileNames/BashCommands が全て null。発火条件が無いためこのプラグインは一切発火しない。") with { Source = name });
             }
 
@@ -210,7 +213,7 @@ internal sealed class ProjectContext : IDisposable
             }
             catch (Exception ex)
             {
-                logger.Emit(LogEntry.Error($"設定ロード失敗（フェイルクローズ）: {ex.Message}") with { Source = name });
+                log(LogEntry.Error($"設定ロード失敗（フェイルクローズ）: {ex.Message}") with { Source = name });
                 errors.Add($"{name}: 設定のロードに失敗（{ex.Message}）");
                 continue;
             }
@@ -219,18 +222,18 @@ internal sealed class ProjectContext : IDisposable
             {
                 foreach (var entry in plugin.Init())
                 {
-                    logger.Emit(entry with { Source = name });
+                    log(entry with { Source = name });
                 }
             }
             catch (Exception ex)
             {
                 // Init を完了できないプラグインは正しく発火できるか検証できていない。
-                logger.Emit(LogEntry.Error($"Init 失敗（フェイルクローズ）: {ex.Message}") with { Source = name });
+                log(LogEntry.Error($"Init 失敗（フェイルクローズ）: {ex.Message}") with { Source = name });
                 errors.Add($"{name}: Init に失敗（{ex.Message}）");
                 continue;
             }
 
-            logger.Emit(LogEntry.Info("起動しました") with { Source = name });
+            log(LogEntry.Info("起動しました") with { Source = name });
             valid.Add(type);
         }
 
@@ -240,7 +243,7 @@ internal sealed class ProjectContext : IDisposable
                                  .ToList();
         if (missing.Count > 0)
         {
-            logger.Emit(LogEntry.Error(
+            log(LogEntry.Error(
                 $"common.yml の tools で有効化されたが lib に存在しない（フェイルクローズ）: {string.Join(", ", missing)}"));
             errors.AddRange(missing.Select(m => $"{m}: tools で有効化されているが lib に存在しない"));
         }
@@ -303,7 +306,7 @@ internal sealed class ProjectContext : IDisposable
                     logger.Write(LogLevel.Warning, warning);
                 }
 
-                var validation = ValidateAndInit(_registry.Types, config, logger);
+                var validation = ValidateAndInit(_registry.Types, config, logger.Emit);
 
                 // 原子的差し替え。実行中リクエストは差し替え前の参照を使い続ける。
                 _config = config;
