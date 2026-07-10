@@ -27,6 +27,9 @@ namespace ai_harness_main;
 ///   --logs &lt;プロジェクト&gt; … そのプロジェクトのログ。
 ///   --plugin     … lib/ にインストール済みのプラグイン一覧。
 ///   --plugin &lt;プロジェクト&gt; … そのプロジェクトで有効化されているか。
+///   --fire       … cwd のプロジェクトで有効プラグインの能動スキャン（Fire）を daemon 経由で一斉起動。
+///   --fire &lt;プラグイン名&gt; … そのプラグインだけ Fire を起動。
+///                  終了コードは 0=問題なし / 2=いずれかが検出 / 1=接続・実行不能（hook 規約とは別系統）。
 ///
 ///   --logs には <c>--n &lt;件数&gt;</c>（新しい順に上位 N 件）・<c>--filter &lt;レベル,…&gt;</c>（レベル絞り込み）・
 ///   <c>--deny</c>（deny の監査レコードのみ）を付けられる。
@@ -97,6 +100,19 @@ public static class Program
                 return await RunInfoAsync(mode, options).ConfigureAwait(false);
             }
 
+            case "--fire":
+            {
+                UseUtf8Output();
+                // 位置引数は「プラグイン名」1 個（情報表示系の「プロジェクトルート」とは別物ゆえ個別に解釈）。
+                if (!TryParseFireArgs(args, out var pluginName, out var fireError))
+                {
+                    await Console.Error.WriteLineAsync(fireError).ConfigureAwait(false);
+                    await Console.Error.WriteLineAsync(Usage.Text).ConfigureAwait(false);
+                    return ExitUsage;
+                }
+                return await FireCommand.RunAsync(pluginName).ConfigureAwait(false);
+            }
+
             case "--version":
             case "-v":
                 UseUtf8Output();
@@ -120,6 +136,32 @@ public static class Program
                 await Console.Error.WriteLineAsync(Usage.Text).ConfigureAwait(false);
                 return ExitUsage;
         }
+    }
+
+    /// <summary>
+    /// <c>--fire</c> の引数を解釈する。位置引数は対象プラグイン名 1 個のみ（未指定は全プラグイン＝null）。
+    /// 未知のオプションや複数の位置引数は <paramref name="error"/> を立てて <c>false</c>。
+    /// </summary>
+    private static bool TryParseFireArgs(string[] args, out string? pluginName, out string error)
+    {
+        pluginName = null;
+        error = "";
+        for (var i = 1; i < args.Length; i++)
+        {
+            var arg = args[i];
+            if (arg.StartsWith('-'))
+            {
+                error = $"不明なオプション: {arg}";
+                return false;
+            }
+            if (pluginName is not null)
+            {
+                error = $"--fire に指定できるプラグインは 1 つだけです: {pluginName} / {arg}";
+                return false;
+            }
+            pluginName = arg;
+        }
+        return true;
     }
 
     /// <summary>情報表示モードを実行する。<c>--project</c> は位置引数・オプションを取らない。</summary>

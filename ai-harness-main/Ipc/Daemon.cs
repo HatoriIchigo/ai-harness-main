@@ -175,6 +175,14 @@ internal static class Daemon
                 return;
             }
 
+            if (env.Type == RequestEnvelope.TypeFire)
+            {
+                var fire = await HandleFireAsync(env, globalLog).ConfigureAwait(false);
+                await Framing.WriteFrameAsync(
+                    server, JsonSerializer.SerializeToUtf8Bytes(fire, ResponseJsonOptions)).ConfigureAwait(false);
+                return;
+            }
+
             HostDecision decision;
             try
             {
@@ -204,6 +212,31 @@ internal static class Daemon
         finally
         {
             await server.DisposeAsync().ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>
+    /// <c>--fire</c> リクエストを処理する。プロジェクトをメモリへ展開（hook と同じ経路）して能動スキャンを走らせ、
+    /// 結果を <see cref="FireResponse"/> で返す。hook のゲートではないため失敗はブロックにせず、
+    /// <see cref="FireResponse.Error"/> に理由を載せて返す。
+    /// </summary>
+    private static async Task<FireResponse> HandleFireAsync(RequestEnvelope env, Logger globalLog)
+    {
+        try
+        {
+            if (string.IsNullOrEmpty(env.ProjectRoot))
+            {
+                return new FireResponse { Error = "projectRoot が空。" };
+            }
+            var ctx = GetOrCreateProject(env.ProjectRoot);
+            var report = await ctx.FireAsync(
+                string.IsNullOrEmpty(env.PluginName) ? null : env.PluginName).ConfigureAwait(false);
+            return FireResponse.From(report);
+        }
+        catch (Exception ex)
+        {
+            globalLog.Write(LogLevel.Error, $"fire 処理失敗: {ex.Message}");
+            return new FireResponse { Error = $"ハーネス内部エラーによりスキャンできませんでした: {ex.Message}" };
         }
     }
 

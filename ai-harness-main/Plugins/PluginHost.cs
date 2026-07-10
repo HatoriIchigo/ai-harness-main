@@ -24,6 +24,26 @@ internal sealed record HostOutcome(
     IReadOnlyDictionary<string, JsonNode> StateUpdates,
     IReadOnlyList<DenyEvent> Denies);
 
+/// <summary>1 プラグインの能動スキャン（<c>--fire</c>）結果。</summary>
+/// <param name="Name">PluginName。</param>
+/// <param name="Result"><see cref="PluginBase.Fire"/> の結果ホルダ（列挙完了時点の確定値）。</param>
+/// <param name="Logs">Fire が yield したログ（source 打刻済み）。</param>
+internal readonly record struct FireOutcome(
+    string Name, PluginResult Result, IReadOnlyList<LogEntry> Logs);
+
+/// <summary>
+/// <c>--fire</c> の実行レポート。<see cref="Error"/> が非 null なら実行できなかった
+/// （設定不備・フェイルクローズ状態等）ことを表し、<see cref="Plugins"/> は空。
+/// </summary>
+/// <param name="Error">実行できなかった理由。実行できたら null。</param>
+/// <param name="Plugins">プラグインごとの結果。</param>
+internal sealed record FireReport(string? Error, IReadOnlyList<FireOutcome> Plugins)
+{
+    public static FireReport Failed(string error) => new(error, []);
+
+    public static FireReport Ok(IReadOnlyList<FireOutcome> plugins) => new(null, plugins);
+}
+
 /// <summary>
 /// 発見済みプラグイン型から、リクエスト毎にインスタンスを生成して並列発火し、
 /// 結果を deny 先勝ちで集約するホスト。インスタンスはリクエスト毎に作る（隔離維持・モデル b）。
@@ -81,6 +101,93 @@ internal sealed class PluginHost
             .ToList();
 
         return new HostOutcome(decision, updates, denies);
+    }
+
+    /// <summary>
+    /// 有効プラグインの <see cref="PluginBase.Fire"/> を並列実行し、プラグインごとの結果を集める。
+    /// <paramref name="pluginFilter"/>（PluginName）指定時はその 1 つだけを対象にする（他は結果に含めない）。
+    /// hook 経路と違い <see cref="PluginBase.ShouldFire"/> フィルタも deny 集約も無い（<c>--fire</c> はレポート）。
+    /// </summary>
+    public async Task<IReadOnlyList<FireOutcome>> RunFireAsync(
+        IReadOnlyList<Type> pluginTypes, string? pluginFilter, string projectRoot,
+        CancellationToken ct = default)
+    {
+        if (pluginTypes.Count == 0)
+        {
+            return [];
+        }
+
+        using var gate = new SemaphoreSlim(_maxParallel);
+
+        var tasks = pluginTypes.Select(t => RunFireOneAsync(t, pluginFilter, projectRoot, gate, ct)).ToArray();
+        var results = await Task.WhenAll(tasks).ConfigureAwait(false);
+
+        return results.Where(r => r.HasValue).Select(r => r!.Value).ToList();
+    }
+
+    private async Task<FireOutcome?> RunFireOneAsync(
+        Type type, string? pluginFilter, string projectRoot, SemaphoreSlim gate, CancellationToken ct)
+    {
+        await gate.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            // Fire は同期 iterator。スレッドプールへ逃がして並列性を確保。
+            return await Task.Run(() => ExecuteFire(type, pluginFilter, projectRoot), ct).ConfigureAwait(false);
+        }
+        finally
+        {
+            gate.Release();
+        }
+    }
+
+    /// <summary>
+    /// 1 プラグインの Fire を実行する。フィルタ名に一致しなければ <c>null</c>（結果に含めない）。
+    /// hook のゲートではないため生成・Fire の失敗はブロックせず、非 0 の結果としてレポートへ載せるだけ。
+    /// </summary>
+    private FireOutcome? ExecuteFire(Type type, string? pluginFilter, string projectRoot)
+    {
+        PluginBase plugin;
+        try
+        {
+            plugin = (PluginBase)Activator.CreateInstance(type)!;
+        }
+        catch (Exception ex)
+        {
+            // 生成できないと PluginName が取れずフィルタ判定できない。名前指定時は対象外として黙って除外し、
+            // 全プラグイン対象（フィルタ無し）のときだけ「生成失敗」をレポートへ残す。
+            if (pluginFilter is not null)
+            {
+                return null;
+            }
+            var failed = new PluginResult { ExitCode = 2, Reason = $"{type.FullName} の生成に失敗: {ex.Message}" };
+            return new FireOutcome(type.FullName ?? "unknown", failed, []);
+        }
+
+        var name = plugin.PluginName;
+        if (pluginFilter is not null && !string.Equals(name, pluginFilter, StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        var result = new PluginResult();
+        var logs = new List<LogEntry>();
+        try
+        {
+            plugin.LoadConfig(_configDir);
+            foreach (var entry in plugin.Fire(projectRoot, result))
+            {
+                var stamped = entry with { Source = name };
+                logs.Add(stamped);
+                _log(stamped);
+            }
+        }
+        catch (Exception ex)
+        {
+            // スキャンの失敗はレポートに検出結果として残すのみ（何もブロックしない）。
+            result.ExitCode = 2;
+            result.Reason = $"{name} の Fire に失敗: {ex.Message}";
+        }
+        return new FireOutcome(name, result, logs);
     }
 
     private async Task<PluginOutcome> RunOneAsync(

@@ -136,6 +136,42 @@ internal sealed class ProjectContext : IDisposable
         return outcome.Decision;
     }
 
+    /// <summary>
+    /// <c>--fire</c>: 有効プラグインの <see cref="PluginBase.Fire"/> を実行し、プラグインごとの結果を返す。
+    /// <paramref name="pluginName"/> 指定でその 1 つに限定（未指定は全有効プラグイン）。アクセス時刻を更新する。
+    ///
+    /// hook のゲートではないが、そもそも設定が壊れて有効プラグイン集合を確定できない状態
+    /// （common.yml 破損・起動検証エラー）ではスキャンの前提が崩れるため、実行せず理由を返す。
+    /// </summary>
+    public async Task<FireReport> FireAsync(string? pluginName, CancellationToken ct = default)
+    {
+        Touch();
+        var config = _config;
+        var logger = _logger;
+        var validation = _validation;
+
+        if (config.LoadError is { } configError)
+        {
+            return FireReport.Failed(
+                $"common.yml の読み込みに失敗しています。設定を修正してください: {configError}");
+        }
+        if (validation.IsFailClosed)
+        {
+            return FireReport.Failed(validation.Reason());
+        }
+
+        var outcomes = await new PluginHost(logger.Emit, config.MaxParallel, config.ConfigDir)
+            .RunFireAsync(validation.ValidTypes, pluginName, config.ProjectRoot, ct).ConfigureAwait(false);
+
+        if (pluginName is not null && outcomes.Count == 0)
+        {
+            return FireReport.Failed(
+                $"プラグイン '{pluginName}' はこのプロジェクトで有効化されていません（または存在しません）。"
+                + " 有効なプラグインは ai-harness-main --plugin <プロジェクト> で確認してください。");
+        }
+        return FireReport.Ok(outcomes);
+    }
+
     private void Touch() => Interlocked.Exchange(ref _lastAccessTicksUtc, DateTime.UtcNow.Ticks);
 
     // ---- 検証・初期化 ----

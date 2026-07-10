@@ -120,6 +120,26 @@ iterator は戻り値で int を返せないため、結果は引数 `PluginResu
 
 ハーネスは全プラグインの結果を集約し、**1 つでも非 0 なら全体 deny**（理由は改行連結）。
 
+## 能動スキャン（`Fire`・任意）
+
+`Action` が hook 発火に紐づくのに対し、`Fire` は利用者が `ai-harness-main --fire`（対象を絞るなら `--fire <プラグイン名>`）で**手動起動**する能動スキャン。cwd から解決したプロジェクトに対し、有効化されているプラグインの `Fire` が daemon 経由で一斉に呼ばれる。
+
+```csharp
+public override IEnumerable<LogEntry> Fire(string projectRoot, PluginResult result)
+{
+    yield return LogEntry.Info("スキャン開始");
+    // …projectRoot 配下を点検し所見を yield…
+    result.ExitCode = 2;                 // 検出（レポート表示のみ。何もブロックしない）
+    result.Reason = "検出内容";
+}
+```
+
+- 既定は no-op（`virtual`）。スキャンを実装したいプラグインだけ override する。
+- `ShouldFire` フィルタは通らず、`common.yml` の `tools` で有効なプラグインが一律に呼ばれる。`LoadConfig` 済みで呼ばれるため `Config` を参照できる。
+- `projectRoot` はスキャン対象のプロジェクトルート（絶対パス）。daemon 常駐ゆえ cwd は使えないため、走査対象は引数で受け取る。
+- **hook のゲートではない**。ここでの `ExitCode != 0` は何かをブロックするのではなく、スキャンの検出結果としてレポート（`--fire` の出力）に表示されるだけ。`Reason`／`AdditionalContext`／yield したログがそのまま並ぶ。
+- ログ・結果の書き方は `Action` と同じ（列挙完了時に `result` 確定）。
+
 ## ログの返し方
 
 `Init`／`Action` は `IEnumerable<LogEntry>` を `yield` で逐次返す。`source` は設定不要（main が `PluginName` を打刻）。
