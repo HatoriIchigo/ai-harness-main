@@ -1,15 +1,17 @@
 # ai-harness-main
 
-> LLM エージェントの逸脱を、プロンプトではなく**機械的な制約**で律するハーネス本体。
+## 概要
 
-LLM エージェントは確率的に振る舞う。「このディレクトリ以外に書くな」「このコマンドは打つな」を
-プロンプトで指示しても、それは*お願い*であり守られる保証がない。ハーネスエンジニアリングは、この規約を
-**決定論的なガードレール**として外側から強制する考え方。モデルの善意ではなく仕組みでアクションを律する。
+LLMエージェントの暴走・逸脱を、skillsやrulesなどのプロンプトにたよらず、機械的な制約で制御していくプログラムです。
+Claude Code の hook を受け、拡張プラグイン（deny・ディレクトリ検証・コミット規約など）を機械的に発火させ、規約に外れたアクションを**確実に差し戻します**。
+「勝手にディレクトリを作る」「許可外の場所にファイルを置く」「禁止コマンドを打つ」といった逸脱を、起きた後ではなく**起きる境界で機械的に**止めるを目的としています。
 
-`ai-harness-main` はその実行基盤。Claude Code の hook を受け、拡張プラグイン（deny・ディレクトリ検証・
-コミット規約など）を機械的に発火させ、規約に外れたアクションを**確実に差し戻す**。「勝手にディレクトリを
-作る」「許可外の場所にファイルを置く」「禁止コマンドを打つ」といった逸脱を、起きた後ではなく**起きる境界で**
-止める。
+## 背景
+
+LLM エージェントは確率的に振る舞います。
+「このディレクトリ以外に書くな」「このコマンドは打つな」をいくらプロンプトやドキュメント、skillsなどで指示しても、それは*お願い*であり守られる保証がありません。
+そのため、モデルの善意ではなく仕組みでアクションを律する仕組みが必須でした。
+`ai-harness-main` はその実行基盤となるプログラムです。
 
 ## アーキテクチャ概要
 
@@ -23,17 +25,47 @@ hook が叩かれると bridge モードで起動し、cwd からプロジェク
 
 ## 特徴
 
-- **機械的強制（決定論的ガードレール）** — 規約を hook で強制し、外れたアクションを deny で差し戻す。プロンプト依存の"お願い"にしない。
-- **単一バイナリ** — bridge と daemon を 1 つの実行体が兼ねる。配置物は 1 つ。
-- **共有 daemon でウォーム保持** — プラグインの型発見は起動時 1 回。全プロジェクトで共有し、hook ごとの遅延を抑える。
-- **マルチテナント** — プロジェクトルートをキーに設定・ログ・有効プラグインを分離。`lib`（型）は共有。
-- **ホットリロード** — プロジェクトの `common.yml`・各プラグイン YAML の変更を `FileSystemWatcher` で検知し無停止反映。
-- **アイドル回収＋自動停止** — 無アクセス 5 分でプロジェクト状態を破棄。全プロジェクトが回収されメモリが空になれば daemon 自体が終了（Claude 終了後の居座り防止）。
-- **deny 先勝ち集約** — 1 つでも非 0 を返せば全体 deny。理由を Claude Code へ返す。
-- **フェイルクローズ（検証できないなら通さない）** — プラグインのクラッシュ・内部エラー・`common.yml` 不正など hook を検証できなかった場合は deny（ブロック）。`tools` で**有効化したプラグインが起動できなかった**場合（`lib` に無い・設定 YAML が無い/壊れている・`Init` が失敗）も、そのガードが効かないため deny する。例外は **bridge が daemon にまったく接続できない**（基盤ごと停止）ときのみで、全ツールのロックアウトを避けるため許可で継続する。
-- **クロスプラットフォーム** — Windows／Linux を単一コードで対応（IPC の OS 差は .NET が吸収）。
+- **機械的強制（決定論的ガードレール）**:
+  規約を hook で強制し、外れたアクションを deny で差し戻す。プロンプト依存の"お願い"にしない。
+- **単一バイナリ**:
+  bridge と daemon を 1 つの実行体が兼ねる。配置物は 1 つ。
+- **共有 daemon でウォーム保持**:
+  プラグインの型発見は起動時 1 回。全プロジェクトで共有し、hook ごとの遅延を抑える。
+- **ホットリロード**:
+  プロジェクトの `common.yml`・各プラグイン YAML の変更を `FileSystemWatcher` で検知し無停止反映。
+- **アイドル回収＋自動停止**:
+  無アクセス 5 分でプロジェクト状態を破棄。全プロジェクトが回収されメモリが空になれば daemon 自体が終了（Claude 終了後の居座り防止）。
+- **deny 先勝ち集約**:
+  1 つでも非 0 を返せば全体 deny。理由を Claude Code へ返す。
+- **フェイルクローズ（検証できないなら通さない）**:
+  プラグインのクラッシュ・内部エラー・`common.yml` 不正など hook を検証できなかった場合は deny（ブロック）。
+  `tools` で**有効化したプラグインが起動できなかった**場合（`lib` に無い・設定 YAML が無い/壊れている・`Init` が失敗）も、そのガードが効かないため deny する。
+  例外は **bridge が daemon にまったく接続できない**（基盤ごと停止）ときのみで、全ツールのロックアウトを避けるため許可で継続する。
+- **クロスプラットフォーム**:
+  Windows／Linux を単一コードで対応（IPC の OS 差は .NET が吸収）。
 
-## クイックスタート
+## インストール
+
+> **はじめて導入するなら [docs/quickstart.md](docs/quickstart.md)。**
+> 発行 → PATH → プラグイン配置 → プロジェクト配線 → deny が実際に効くまでを、Windows／Linux の
+> 具体コマンドで一通り通す最短手順（10 分程度）。以下は要点の抜粋。
+
+### Windows
+
+```powershell
+# 1. dotnet のインストール（なければ）
+winget install Microsoft.DotNet.SDK.10
+
+# 2. self-contained 単一ファイルで発行
+dotnet publish ai-harness-main\ai-harness-main\ai-harness-main.csproj `
+  -c Release -r win-x64 --self-contained true `
+  -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true `
+  -o <インストール先>
+
+# 3. PATH に <インストール先> を追加（hook は名前だけで ai-harness-main を起動する）
+```
+
+### Linux
 
 ```sh
 # 1. self-contained 単一ファイルで発行（Linux の例）
@@ -54,6 +86,8 @@ cp ai-harness-main/ai-harness-main/config/common.yml <プロジェクト>/.claud
 cp <plugin>.yml <プロジェクト>/.claude/harness/config/
 ```
 
+## 各プロジェクト側のClaude Codeの設定
+
 Claude Code の `settings.json` では hook コマンドに **`ai-harness-main`** を指定する（PATH 解決・環境変数不要）。
 
 ```json
@@ -70,71 +104,29 @@ Claude Code の `settings.json` では hook コマンドに **`ai-harness-main`*
 
 ## 実行モード
 
+単一バイナリで、**第 1 引数のモードで役割が変わる**。bridge になるのは**引数なし**のときだけで、
+未知の引数は使い方を出して 1 で終わる（typo を hook として扱わない）。
+
 | 起動 | 役割 |
 |---|---|
 | （引数なし） | bridge。hook ごとに Claude Code が叩く受け口。stdin を daemon へ中継。未起動なら daemon を起動 |
-| `--daemon` | 常駐サーバー。パイプで待ち受け、プロジェクト別に処理。全プロジェクト回収または接続途絶 5 分で自動終了 |
-| `--ensure` | 未起動なら detached 起動 |
-| `--restart` | 停止→再起動（`lib` のプラグイン DLL 差し替え反映用） |
-| `--stop` | 停止 |
+| `--daemon` / `--ensure` / `--restart` / `--stop` | daemon の制御。`--restart` は `lib` のプラグイン DLL 差し替え反映用 |
 | `--standalone` | daemon を介さず stdin を 1 件処理して終了（テスト・フォールバック） |
-| `--update` | `config/plugins.yml` に従い拡張プラグインを `repos/` へ clone／build し `lib/` へ配置し、続けて本体自身も tmp へ publish して置換（自己更新）。`git`／`dotnet` 未導入なら異常終了 |
-| `--project` | 稼働中の daemon がメモリに展開しているプロジェクト一覧を表示（daemon は起こさない） |
-| `--logs [プロジェクト]` | 無指定は実行体自身のログ、指定時はそのプロジェクトのログを新しい順に表示 |
-| `--plugin [プロジェクト]` | 無指定は `lib/` のプラグイン一覧、指定時はそのプロジェクトでの有効/無効を表示 |
-| `--validate [プロジェクト]` | 設定で hook が通る状態か検証（無指定は cwd から解決）。0=成功 / 1=失敗 |
-| `--doctor` | この配置でハーネスが機能するか診断（`lib`・native・daemon・`git`/`dotnet`）。0=致命的な問題なし / 1=error あり |
-| `--fire [プラグイン名]` | cwd のプロジェクトで有効プラグインの能動スキャン（`Fire`）を daemon 経由で起動（無指定は全プラグイン）。未起動なら daemon を起動。hook とは独立でゲートではない。0=問題なし / 2=いずれかが検出 / 1=接続・実行不能 |
-| `--version` / `-v` | 版・ランタイム・実行体パスを表示 |
-| `--help` / `-h` | 使い方を表示 |
+| `--update` | `config/plugins.yml` に従いプラグインを `lib/` へ配置し、本体自身も置換（自己更新） |
+| `--validate [プロジェクト]` | 設定で hook が通る状態か検証。0=成功 / 1=失敗 |
+| `--doctor` | この配置でハーネスが機能するか診断（`lib`・native・daemon・`git`/`dotnet`） |
+| `--project` / `--logs` / `--plugin` | 読み取り専用の情報表示（展開中プロジェクト／ログ／プラグイン） |
+| `--fire [プラグイン名]` | 有効プラグインの能動スキャン。hook とは独立でゲートではない。0=問題なし / 2=検出 / 1=実行不能 |
+| `--version` / `--help` | 版の表示／使い方 |
 
-bridge になるのは**引数なし**のときだけで、未知の引数は使い方を出して 1 で終わる。
-
-`--logs` は表示件数・重大度・deny の有無で絞れる。フィルタしてから件数を切るため、`--filter` 併用時の
-`--n` は「該当ログの上位 N 件」を意味する。
-
-```sh
-ai-harness-main --logs --n 35                        # 実行体のログを新しい順に 35 件
-ai-harness-main --logs C:\Users\project1 --filter warn,error
-ai-harness-main --logs C:\Users\project1 --deny      # deny の監査レコードだけ
-```
-
-### 設定の検証
-
-フェイルクローズ設計では、設定が壊れた瞬間にそのプロジェクトの全 hook がブロックされる。`--validate` は
-hook を待たずに同じ判定（`ProjectContext.ValidateAndInit`）を通し、結果を終了コードで返す。
-daemon には触れず、プロジェクトのログも書かない。commit hook や CI から使える。
-
-```sh
-ai-harness-main --validate                    # cwd から解決
-ai-harness-main --validate C:\Users\project1
-```
-
-`common.yml` が無いプロジェクトはハーネス対象外なので成功（hook は素通り）。`common.yml` が壊れている、
-`tools` で有効化したプラグインが `lib` に無い・設定 YAML が無い・`Init` に失敗する場合は失敗（1）を返す。
-
-### 環境の診断
-
-`--doctor` は `lib/` の DLL、tree-sitter の native grammar（実際にロードを試す）、`resources/`、
-ログ出力先、daemon の稼働、`--update` が要求する `git`／`dotnet` を一通り確かめる。
-
-判定は「失敗すると何が壊れるか」で決まる。プラグインが 1 つも動かなくなる `lib/` の欠落は **error**（1）、
-tree-sitter プラグインや自己更新だけが使えなくなるものは **warn**（0）。native の欠落は「AST 解析に失敗して
-フェイルクローズ」という遠回りな症状になるため、ここで直接切り分けられる。
-
-### deny の監査レコード
-
-deny は通常のログ行に加えて**構造化フィールド**（`event=deny`／`kind`／`plugin`／`tool`／`hookEvent`／
-`reason`）つきで `logs/<日付>.jsonl` に記録される。`--deny` はこの行だけを表示する。
-
-由来はレベルで分かれる。**ルールによる deny は `warn`**（設計どおりの動作）、**フェイルクローズは `error`**
-（プラグインを検証できずにブロックした＝ハーネス側の異常）。したがって `--deny --filter error` は
-「ハーネスが不調でブロックした件」だけを、`--deny --filter warn` は「ルールが実際に効いた件」だけを拾う。
+各モードのオプション・終了コード・使い分けは **[docs/cli.md](docs/cli.md)** を参照。
 
 ## ドキュメント
 
 | ドキュメント | 内容 |
 |---|---|
+| [docs/quickstart.md](docs/quickstart.md) | **最短導入**（発行・PATH・プラグイン配置・プロジェクト配線・動作確認・つまずき集） |
+| [docs/cli.md](docs/cli.md) | **コマンドライン**（全モード・オプション・終了コードの体系） |
 | [docs/architecture.md](docs/architecture.md) | 全体構成・コンポーネント・処理フロー・IPC・マルチテナント・ライフサイクル |
 | [docs/plugin-development.md](docs/plugin-development.md) | 新規プラグイン作成の手順（csproj・実装・発火条件・配置） |
 | [docs/build-and-deploy.md](docs/build-and-deploy.md) | Windows／Linux のビルド・発行・配置・daemon 制御 |
