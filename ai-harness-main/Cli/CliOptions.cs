@@ -7,7 +7,7 @@ namespace ai_harness_main;
 ///
 /// <code>
 ///   --logs   [プロジェクトルート] [--n 件数] [--filter warn,debug] [--deny]
-///   --plugin [プロジェクトルート]
+///   --plugin [プロジェクトルート] [--enable 名,…] [--disable 名,…]
 ///   --project
 /// </code>
 ///
@@ -29,6 +29,12 @@ internal sealed class CliOptions
     public bool DenyOnly { get; private init; }
 
     /// <summary>
+    /// 有効化／無効化するプラグイン（<c>--enable</c> / <c>--disable</c>、指定順）。
+    /// 未指定は空＝<c>--plugin</c> は表示のみ。
+    /// </summary>
+    public IReadOnlyList<(string Name, bool Enable)> Toggles { get; private init; } = [];
+
+    /// <summary>
     /// <paramref name="args"/> の 1 番目以降（0 番目はモード名）を解釈する。
     /// 失敗時は <paramref name="error"/> に利用者向けの理由を入れて <c>false</c>。
     /// </summary>
@@ -38,6 +44,7 @@ internal sealed class CliOptions
         int? take = null;
         HashSet<LogLevel>? levels = null;
         var denyOnly = false;
+        var toggles = new List<(string Name, bool Enable)>();
         error = "";
         options = new CliOptions();
 
@@ -59,6 +66,39 @@ internal sealed class CliOptions
                 case "--deny":
                     denyOnly = true;
                     break;
+
+                case "--enable":
+                case "--disable":
+                {
+                    var enable = arg == "--enable";
+                    if (i + 1 >= args.Length || args[i + 1].StartsWith('-'))
+                    {
+                        error = $"{arg} にはプラグイン名を指定してください（カンマ区切りで複数可）。";
+                        return false;
+                    }
+                    var names = args[++i]
+                        .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+                    if (names.Length == 0)
+                    {
+                        error = $"{arg} にはプラグイン名を指定してください（カンマ区切りで複数可）。";
+                        return false;
+                    }
+                    foreach (var name in names)
+                    {
+                        // 同じプラグインに有効化と無効化を同時指定＝どちらが意図か決められない。
+                        if (toggles.Any(t => t.Name == name && t.Enable != enable))
+                        {
+                            error = $"同じプラグインを --enable と --disable の両方に指定しています: {name}";
+                            return false;
+                        }
+                        if (toggles.Any(t => t.Name == name))
+                        {
+                            continue; // 同じ向きの重複指定は無視
+                        }
+                        toggles.Add((name, enable));
+                    }
+                    break;
+                }
 
                 case "--filter":
                     levels = [];
@@ -90,7 +130,14 @@ internal sealed class CliOptions
             }
         }
 
-        options = new CliOptions { Project = project, Take = take, Levels = levels, DenyOnly = denyOnly };
+        options = new CliOptions
+        {
+            Project = project,
+            Take = take,
+            Levels = levels,
+            DenyOnly = denyOnly,
+            Toggles = toggles,
+        };
         return true;
     }
 

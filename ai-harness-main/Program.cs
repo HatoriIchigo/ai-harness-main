@@ -28,6 +28,9 @@ namespace ai_harness_main;
 ///   --logs &lt;プロジェクト&gt; … そのプロジェクトのログ。
 ///   --plugin     … lib/ にインストール済みのプラグイン一覧。
 ///   --plugin &lt;プロジェクト&gt; … そのプロジェクトで有効化されているか。
+///   --plugin [&lt;プロジェクト&gt;] --enable|--disable &lt;プラグイン名,…&gt; … そのプロジェクトの common.yml の
+///                  tools を書き換えて有効化／無効化する（プロジェクト無指定は cwd から解決）。設定 YAML は
+///                  ホットリロード対象のため daemon の再起動は要らない。
 ///   --fire       … cwd のプロジェクトで有効プラグインの能動スキャン（Fire）を daemon 経由で一斉起動。
 ///   --fire &lt;プラグイン名&gt; … そのプラグインだけ Fire を起動。
 ///                  終了コードは 0=問題なし / 2=いずれかが検出 / 1=接続・実行不能（hook 規約とは別系統）。
@@ -185,7 +188,7 @@ public static class Program
         if (mode is "--project" or "--doctor")
         {
             if (options.Project is not null || options.Take is not null
-                || options.Levels is not null || options.DenyOnly)
+                || options.Levels is not null || options.DenyOnly || options.Toggles.Count > 0)
             {
                 await Console.Error.WriteLineAsync($"{mode} は引数を取りません。").ConfigureAwait(false);
                 return ExitUsage;
@@ -193,6 +196,13 @@ public static class Program
             return mode == "--doctor"
                 ? await DoctorCommand.RunAsync().ConfigureAwait(false)
                 : await ProjectsCommand.RunAsync().ConfigureAwait(false);
+        }
+
+        // 設定の書き換えは --plugin の責務。他のモードでは受け付けない。
+        if (mode != "--plugin" && options.Toggles.Count > 0)
+        {
+            await Console.Error.WriteLineAsync($"{mode} は --enable / --disable を取りません。").ConfigureAwait(false);
+            return ExitUsage;
         }
 
         if (mode == "--logs")

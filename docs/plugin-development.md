@@ -11,7 +11,7 @@
 4. 設定ファイル（YAML）を用意
 5. ビルドして DLL を生成
 6. DLL を <インストール先>/lib/ へ配置（共有）
-7. プロジェクトの .claude/harness/config/ へ YAML を配置し、common.yml の tools で有効化
+7. プロジェクトの .claude/harness/config/ へ YAML を配置し、--plugin --enable で有効化
 8. daemon を --restart で再起動して新 DLL を反映（YAML の変更はホットリロードで反映）
 ```
 
@@ -174,9 +174,12 @@ dotnet build sample-plugins/MyPlugin/MyPlugin.csproj -c Release
 cp sample-plugins/MyPlugin/bin/Release/net10.0/MyPlugin.dll  <インストール先>/lib/
 cp my-plugin.yml                                             <プロジェクト>/.claude/harness/config/
 
-# common.yml の tools で有効化（- MyPlugin: true）した上で、新 DLL を反映
+# 新 DLL を反映してから、そのプロジェクトで有効化
 ai-harness-main --restart
+ai-harness-main --plugin <プロジェクト> --enable MyPlugin
 ```
+
+設定 YAML（`my-plugin.yml`）を置く前に有効化しようとすると、フェイルクローズを避けるため `--enable` が拒否する。
 
 DLL を差し替えたときだけ `--restart`。`common.yml`・各プラグイン YAML の変更はホットリロードで反映される。詳細なビルド・発行手順は [build-and-deploy.md](build-and-deploy.md) を参照。
 

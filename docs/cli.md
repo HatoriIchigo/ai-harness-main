@@ -27,6 +27,7 @@ ai-harness-main [モード] [オプション]
 | [`--project`](#--project) | daemon がメモリに展開しているプロジェクト一覧 | 0 / 1=引数エラー |
 | [`--logs`](#--logs-プロジェクト-オプション) | ログを新しい順に表示する | 0 / 1=引数エラー |
 | [`--plugin`](#--plugin-プロジェクト) | プラグイン一覧／プロジェクトでの有効状態 | 0 / 1=引数エラー |
+| [`--plugin --enable\|--disable`](#--plugin-プロジェクト---enable--disable-名) | プロジェクトのプラグインを有効化／無効化する | 0 / 1=拒否・引数エラー |
 | [`--fire`](#--fire-プラグイン名) | 有効プラグインの能動スキャンを起動する | 0=問題なし / 2=検出 / 1=実行不能 |
 | [`--health`](#--health) | 起動検証（ランタイムが正常起動すれば 0） | 0 |
 | `--version`, `-v` | 版・ランタイム・実行体パスを表示する | 0 |
@@ -195,6 +196,38 @@ deny は通常のログ行に加えて**構造化フィールド**（`event=deny
 ai-harness-main --plugin                      # lib/ に何が入っているか
 ai-harness-main --plugin C:\Users\project1    # そのプロジェクトで何が有効か
 ```
+
+### `--plugin [プロジェクト] --enable|--disable <名,…>`
+
+そのプロジェクトの `common.yml` の `tools` を書き換えて、プラグインを有効化／無効化する。
+プロジェクト無指定なら cwd から解決する（bridge と同じ上方探索）。名前はカンマ区切りで複数指定できる。
+
+```sh
+ai-harness-main --plugin --enable ai-harness-deny                       # cwd のプロジェクト
+ai-harness-main --plugin C:\Users\project1 --disable ai-harness-deny
+ai-harness-main --plugin --enable ai-harness-deny,ai-harness-constants  # まとめて
+```
+
+- 設定 YAML は**ホットリロード**対象。書き換えれば daemon の再起動なしで反映される。
+- `common.yml` が無ければ既定テンプレート（`<実行体>/resources/common.yml`）から**新規作成**する。
+- 書き換えは**行単位の最小編集**。コメント・キー順・行末コメントを保つ。フロー形式（`tools: [...]`）は
+  安全に編集できないため拒否する（ブロック形式へ直してから再実行する）。
+- 実行後に、そのプロジェクトでの有効/無効の一覧を表示する。
+
+**有効化はプロジェクトを壊さない場合に限る。** 有効化したプラグインが発火できる状態に到達できないと
+起動検証がフェイルクローズし、そのプロジェクトの hook が**全て** deny される。そのため書き込む前に
+起動検証を通し、有効化が原因で全 deny になるなら**書き込まずに拒否**する。
+
+```
+$ ai-harness-main --plugin --enable deny-marker
+有効化を中止しました（この設定では hook が全て deny されます）:
+- deny-marker: 設定のロードに失敗（Could not find file '.../denymarker.yml'）
+
+プラグインの設定 YAML を .../config に置いてから再実行してください。
+```
+
+無効化は状態を改善する方向なので常に許す（`lib/` に無い名前でも、既に壊れた設定でも通る）。
+フェイルクローズからの**復旧経路**になるため。
 
 ## スキャン
 

@@ -68,6 +68,8 @@ dotnet publish ai-harness-main\ai-harness-main\ai-harness-main.csproj `
 <インストール先>/               実行体と共有資産（全プロジェクト共通）
 ├── ai-harness-main(.exe)       単一バイナリ（bridge／daemon／standalone）
 ├── lib/                        共有プラグイン（*.dll。マネージド依存 TreeSitter.dll 等も同居）
+├── config/                     本体設定（plugins.yml＝プラグインのインストール定義）
+├── resources/                  プロジェクトへ配る既定テンプレート（common.yml・phase.yml）
 ├── runtimes/                   tree-sitter ネイティブ grammar（<rid>/native/*.dll）。host が起動時に事前ロード
 ├── run/                        daemon 作業領域（daemon.lock、自動生成）
 └── logs/                       daemon ライフサイクルログ（自動生成）
@@ -87,8 +89,11 @@ cp <plugin>.dll <インストール先>/lib/
 
 # プロジェクト側の設定を配置
 mkdir -p <プロジェクト>/.claude/harness/config
-cp ai-harness-main/ai-harness-main/config/common.yml <プロジェクト>/.claude/harness/config/
-cp <plugin>.yml                                       <プロジェクト>/.claude/harness/config/
+cp <plugin>.yml <プロジェクト>/.claude/harness/config/
+
+# common.yml は --plugin --enable が既定テンプレート（<インストール先>/resources/common.yml）から
+# 自動生成する。手で置くなら同じテンプレートをコピーする。
+ai-harness-main --plugin <プロジェクト> --enable <PluginName>
 ```
 
 > `lib/` には**プラグインの管理 DLL のみ**を置く。`ai-harness-baselib.dll` は host が共有ロードするため置かない（プラグインの csproj 側で `<Private>false</Private>` と `CopyLocalLockFileAssemblies=false` を指定して出力から除外する）。loader も `ai-harness-baselib` という名前の DLL はスキップする。プラグインが参照する管理依存（例: tree-sitter プラグインの `TreeSitter.dll`）も同じ `lib/` に同居させる。**`.deps.json` は不要**——`PluginLoadContext`（ALC）が `.deps.json` で解決できない管理依存を **`lib/` 直下の同名 DLL として直接プローブ**するため、プラグイン配布物は管理 DLL だけでよい（フレームワーク assembly は `lib/` に無いので既定コンテキストへ委ねられる）。

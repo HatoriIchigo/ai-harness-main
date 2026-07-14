@@ -17,11 +17,9 @@ internal static class ValidateCommand
 {
     public static int Run(CliOptions options)
     {
-        var root = options.Project is { } specified
-            ? ResolveOrNull(specified)
-            : ProjectLocator.Resolve(Environment.CurrentDirectory);
-        if (root is null)
+        if (!ProjectPath.TryResolveOrLocate(options.Project, out var root, out var resolveError))
         {
+            Console.Error.WriteLine(resolveError);
             return 1;
         }
 
@@ -70,16 +68,6 @@ internal static class ValidateCommand
             Console.Out.WriteLine($"- {error}");
         }
         return 1;
-    }
-
-    private static string? ResolveOrNull(string project)
-    {
-        if (ProjectPath.TryResolve(project, out var root, out var error))
-        {
-            return root;
-        }
-        Console.Error.WriteLine(error);
-        return null;
     }
 
     /// <summary>lib の走査で出た警告・エラーのみ stderr へ（検証結果そのものは stdout に残す）。</summary>

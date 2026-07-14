@@ -12,7 +12,9 @@ maxParallel: 0
 
 # 有効化するプラグイン。キーは各プラグインの PluginName、値は true/false。
 # true のみ有効化。false および未記載のプラグインは無効（一切発火しない）。
-# ここに書いた PluginName が lib（共有）に存在しない場合は、当該プロジェクトでは無視（エラーログのみ）。
+# ここに書いた PluginName が lib（共有）に存在しない場合、そのガードは効かないため
+# フェイルクローズ＝当該プロジェクトの hook は全て deny される（--validate で検出できる）。
+# 手で書くほか ai-harness-main --plugin --enable <プラグイン名> でも切り替えられる。
 # 例:
 #   tools:
 #     - ai-harness-deny: true

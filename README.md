@@ -80,10 +80,11 @@ ln -sf <インストール先>/ai-harness-main /usr/local/bin/ai-harness-main
 mkdir -p <インストール先>/lib
 cp <plugin>.dll <インストール先>/lib/
 
-# 4. プロジェクト側に設定を置く
+# 4. プロジェクト側にプラグインの設定 YAML を置き、そのプロジェクトで有効化する
+#    （common.yml は --enable が既定テンプレートから自動生成する）
 mkdir -p <プロジェクト>/.claude/harness/config
-cp ai-harness-main/ai-harness-main/config/common.yml <プロジェクト>/.claude/harness/config/
 cp <plugin>.yml <プロジェクト>/.claude/harness/config/
+ai-harness-main --plugin <プロジェクト> --enable <PluginName>
 ```
 
 ## 各プロジェクト側のClaude Codeの設定
@@ -117,6 +118,7 @@ Claude Code の `settings.json` では hook コマンドに **`ai-harness-main`*
 | `--validate [プロジェクト]` | 設定で hook が通る状態か検証。0=成功 / 1=失敗 |
 | `--doctor` | この配置でハーネスが機能するか診断（`lib`・native・daemon・`git`/`dotnet`） |
 | `--project` / `--logs` / `--plugin` | 読み取り専用の情報表示（展開中プロジェクト／ログ／プラグイン） |
+| `--plugin [プロジェクト] --enable\|--disable <名,…>` | プロジェクトの `common.yml` の `tools` を書き換えてプラグインを有効化／無効化。ホットリロードで無停止反映 |
 | `--fire [プラグイン名]` | 有効プラグインの能動スキャン。hook とは独立でゲートではない。0=問題なし / 2=検出 / 1=実行不能 |
 | `--version` / `--help` | 版の表示／使い方 |
 
@@ -168,9 +170,11 @@ ai-harness-main/
     │   └── SelfUpdater.cs       本体自己更新（tmp へ publish → --apply-update で実行体を置換・検証・ロールバック）
     ├── Logging/
     │   └── Logger.cs            レベルフィルタ＋ログ集約（出力先は引数）
-    └── config/
-        ├── common.yml           プロジェクト設定の既定値（配置元サンプル）
-        └── plugins.yml          プラグインインストール定義（本体直下 config/ へ配置するサンプル）
+    ├── config/
+    │   └── plugins.yml          プラグインインストール定義（本体直下 config/ へ配置するサンプル）
+    └── resources/
+        ├── common.yml           プロジェクト設定の既定テンプレート（--plugin --enable が新規作成に使う）
+        └── phase.yml            フェーズ定義の既定テンプレート
 ```
 
 ## 関連プロジェクト

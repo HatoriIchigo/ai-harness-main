@@ -28,4 +28,19 @@ internal static class ProjectPath
         }
         return true;
     }
+
+    /// <summary>
+    /// 位置引数のプロジェクトを解決する。<paramref name="project"/> が <c>null</c>（無指定）なら
+    /// cwd から上方探索でルートを決める（bridge と同じ探索）。
+    /// </summary>
+    public static bool TryResolveOrLocate(string? project, out string root, out string error)
+    {
+        if (project is not null)
+        {
+            return TryResolve(project, out root, out error);
+        }
+        root = ProjectLocator.Resolve(Environment.CurrentDirectory);
+        error = "";
+        return true;
+    }
 }
