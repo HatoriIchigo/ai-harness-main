@@ -98,7 +98,7 @@ ai-harness-main --plugin <プロジェクト> --enable <PluginName>
 
 > `lib/` には**プラグインの管理 DLL のみ**を置く。`ai-harness-baselib.dll` は host が共有ロードするため置かない（プラグインの csproj 側で `<Private>false</Private>` と `CopyLocalLockFileAssemblies=false` を指定して出力から除外する）。loader も `ai-harness-baselib` という名前の DLL はスキップする。プラグインが参照する管理依存（例: tree-sitter プラグインの `TreeSitter.dll`）も同じ `lib/` に同居させる。**`.deps.json` は不要**——`PluginLoadContext`（ALC）が `.deps.json` で解決できない管理依存を **`lib/` 直下の同名 DLL として直接プローブ**するため、プラグイン配布物は管理 DLL だけでよい（フレームワーク assembly は `lib/` に無いので既定コンテキストへ委ねられる）。
 
-> **tree-sitter ネイティブ**（constants／file-rules／sandbox が使う `libtree-sitter` と `tree-sitter-*` grammar）は `lib/` ではなく**実行体隣の `runtimes/<rid>/native/`** に置く。host（`ai-harness-main`）が**2 つの経路**で解決する。どちらか一方では足りない。
+> **tree-sitter ネイティブ**（constants／file-rules／outside-deny が使う `libtree-sitter` と `tree-sitter-*` grammar）は `lib/` ではなく**実行体隣の `runtimes/<rid>/native/`** に置く。host（`ai-harness-main`）が**2 つの経路**で解決する。どちらか一方では足りない。
 >
 > 1. **grammar（ベア名の `NativeLibrary.Load`）** … TreeSitter.DotNet は grammar を「ベア名」で `NativeLibrary.Load` する。これは `.deps.json` も ALC のネイティブ解決も経由せず、OS 既定探索（実行体ディレクトリ・system・PATH）だけが効く。host は daemon／standalone 起動時に `runtimes/<現在の RID>/native/` の各ファイルを**フルパスで事前ロード**し（`PreloadNativeLibraries`）、以降のベア名ロードを OS の既ロード解決に委ねる（PATH や探索パスは変更しない）。
 > 2. **コア（`DllImport("tree-sitter")`）** … こちらは ALC の `LoadUnmanagedDll` を通る。`lib/` へ手動配置した `TreeSitter.dll` は `.deps.json` を持たないため `AssemblyDependencyResolver` が解決できない。そこで `PluginLoadContext` が `runtimes/<rid>/native/` を**直接プローブ**する（管理依存を `lib/` 直下から直接プローブするのと同じ発想）。

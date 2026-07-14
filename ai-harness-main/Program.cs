@@ -239,7 +239,7 @@ public static class Program
     /// <summary>
     /// 実行体隣の <c>runtimes/&lt;rid&gt;/native</c> にあるネイティブライブラリをフルパスで事前ロードする。
     ///
-    /// tree-sitter を使うプラグイン（constants／file-rules／sandbox）が依存する TreeSitter.DotNet は、grammar を
+    /// tree-sitter を使うプラグイン（constants／file-rules／outside-deny）が依存する TreeSitter.DotNet は、grammar を
     /// <c>NativeLibrary.Load(ベア名)</c> で読み込む。これは ALC のネイティブ解決フックも <c>.deps.json</c>
     /// リゾルバも通らず、OS 既定探索（実行体ディレクトリ・system・PATH）だけが効くため、それらに含まれない
     /// 配置では <c>DllNotFoundException</c> になる。先にフルパスでロードしておけば、以降のベア名ロードは
