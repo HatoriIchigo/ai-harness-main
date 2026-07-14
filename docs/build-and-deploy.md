@@ -98,7 +98,12 @@ ai-harness-main --plugin <プロジェクト> --enable <PluginName>
 
 > `lib/` には**プラグインの管理 DLL のみ**を置く。`ai-harness-baselib.dll` は host が共有ロードするため置かない（プラグインの csproj 側で `<Private>false</Private>` と `CopyLocalLockFileAssemblies=false` を指定して出力から除外する）。loader も `ai-harness-baselib` という名前の DLL はスキップする。プラグインが参照する管理依存（例: tree-sitter プラグインの `TreeSitter.dll`）も同じ `lib/` に同居させる。**`.deps.json` は不要**——`PluginLoadContext`（ALC）が `.deps.json` で解決できない管理依存を **`lib/` 直下の同名 DLL として直接プローブ**するため、プラグイン配布物は管理 DLL だけでよい（フレームワーク assembly は `lib/` に無いので既定コンテキストへ委ねられる）。
 
-> **tree-sitter ネイティブ**（constants／file-rules が使う `tree-sitter-*.dll`）は `lib/` ではなく**実行体隣の `runtimes/<rid>/native/`** に置く。TreeSitter.DotNet が grammar を「ベア名」で `NativeLibrary.Load` するため `.deps.json`／ALC のネイティブ解決を経由せず、OS 既定探索（実行体ディレクトリ・system・PATH）に無いと `DllNotFoundException` になる。host（`ai-harness-main`）は daemon／standalone 起動時に `runtimes/<現在の RID>/native/` の各ファイルをフルパスで事前ロードし、以降のベア名ロードを OS の既ロード解決に委ねる（PATH や探索パスは変更しない）。
+> **tree-sitter ネイティブ**（constants／file-rules／sandbox が使う `libtree-sitter` と `tree-sitter-*` grammar）は `lib/` ではなく**実行体隣の `runtimes/<rid>/native/`** に置く。host（`ai-harness-main`）が**2 つの経路**で解決する。どちらか一方では足りない。
+>
+> 1. **grammar（ベア名の `NativeLibrary.Load`）** … TreeSitter.DotNet は grammar を「ベア名」で `NativeLibrary.Load` する。これは `.deps.json` も ALC のネイティブ解決も経由せず、OS 既定探索（実行体ディレクトリ・system・PATH）だけが効く。host は daemon／standalone 起動時に `runtimes/<現在の RID>/native/` の各ファイルを**フルパスで事前ロード**し（`PreloadNativeLibraries`）、以降のベア名ロードを OS の既ロード解決に委ねる（PATH や探索パスは変更しない）。
+> 2. **コア（`DllImport("tree-sitter")`）** … こちらは ALC の `LoadUnmanagedDll` を通る。`lib/` へ手動配置した `TreeSitter.dll` は `.deps.json` を持たないため `AssemblyDependencyResolver` が解決できない。そこで `PluginLoadContext` が `runtimes/<rid>/native/` を**直接プローブ**する（管理依存を `lib/` 直下から直接プローブするのと同じ発想）。
+>
+> **事前ロードだけでは 2 を解決できない。** dlopen が既ロードとして再利用する鍵は **SONAME** であり、ファイル名と一致するとは限らない（実測: `libtree-sitter.so` の SONAME は `libtree-sitter.so.0.26`）。フルパスで事前ロードしても `DllImport("tree-sitter")` からの `libtree-sitter.so` 探索は既ロードに当たらず、OS 既定探索（実行体ディレクトリを**含まない**）に落ちて `DllNotFoundException` になる。
 >
 ### native 配布ポリシー
 
@@ -108,7 +113,7 @@ native の入手経路は使用者が置くもの（host と `lib/` のプラグ
 
 2. **それ以外の native は既定リリースに一切含めない**（host にも `lib/` にも置かない）。使用者は `runtimes/` を触らない（追加不可）。ただし**プログラム（host）が `runtimes/` を書き換えるのは可**。
 
-3. **tree-sitter 以外で native が要るプラグインは、native を自分の管理 DLL に埋め込む（embedded resource）。** host が起動時に `runtimes/<rid>/native/` へ**自動展開**してから事前ロードする。使用者は従来どおり管理 DLL を `lib/` に置くだけで、`runtimes/` を触らない。native はプラグイン DLL に同梱されるため**完全オフライン**（ネットワーク・外部インストーラ不要）。native を `DllImport`／ベア名のどちらでロードしても、`runtimes/` 事前ロード（既ロード解決）で効く。
+3. **tree-sitter 以外で native が要るプラグインは、native を自分の管理 DLL に埋め込む（embedded resource）。** host が起動時に `runtimes/<rid>/native/` へ**自動展開**してから事前ロードする。使用者は従来どおり管理 DLL を `lib/` に置くだけで、`runtimes/` を触らない。native はプラグイン DLL に同梱されるため**完全オフライン**（ネットワーク・外部インストーラ不要）。native を `DllImport`／ベア名のどちらでロードしても、`runtimes/` の事前ロードと `PluginLoadContext` の直接プローブ（上記 1・2）で効く。
 
    - 自動展開は**グローバル単一の `runtimes/`・冪等（既に在れば何もしない）・起動時 1 回（型発見時）**。複数プロジェクト（マルチテナント）や複数プラグインが同じ native を要求しても、`runtimes/` には 1 つだけ・展開も 1 回だけ。初回展開の競合は `.tmp` → atomic rename で回避する。
    - この host 側の自動展開フックは、**最初の非 tree-sitter native プラグインが登場した時点で実装**する（tree-sitter は既定同梱なので現状は不要）。`PreloadNativeLibraries` による `runtimes/` 事前ロードの仕組みは共通で流用する。

@@ -239,12 +239,17 @@ public static class Program
     /// <summary>
     /// 実行体隣の <c>runtimes/&lt;rid&gt;/native</c> にあるネイティブライブラリをフルパスで事前ロードする。
     ///
-    /// tree-sitter を使うプラグイン（constants／file-rules）が依存する TreeSitter.DotNet は、grammar を
+    /// tree-sitter を使うプラグイン（constants／file-rules／sandbox）が依存する TreeSitter.DotNet は、grammar を
     /// <c>NativeLibrary.Load(ベア名)</c> で読み込む。これは ALC のネイティブ解決フックも <c>.deps.json</c>
     /// リゾルバも通らず、OS 既定探索（実行体ディレクトリ・system・PATH）だけが効くため、それらに含まれない
     /// 配置では <c>DllNotFoundException</c> になる。先にフルパスでロードしておけば、以降のベア名ロードは
     /// OS が既ロードのモジュールを返す。PATH や探索パスを一切変更せず、アプリが自分の同梱ネイティブを
     /// 明示的にロードするだけ。プラグインを動かすモード（daemon／standalone）で発火前に一度呼ぶ。
+    ///
+    /// <b>これだけでは足りない</b>。既ロードの再利用は <b>SONAME</b> で照合されるため、ファイル名と SONAME が
+    /// 食い違う場合（実測: <c>libtree-sitter.so</c> の SONAME は <c>libtree-sitter.so.0.26</c>）、事前ロードしても
+    /// <c>DllImport("tree-sitter")</c> は既ロードに当たらない。<c>DllImport</c> 経由の解決は
+    /// <see cref="PluginLoadContext"/> が <c>runtimes/&lt;rid&gt;/native</c> を直接プローブして担う（2 経路で補完し合う）。
     ///
     /// この実行体隣の <c>runtimes/</c> に**既定リリースで置いてよいのは tree-sitter の native のみ**（汎用
     /// first-party の特例）。それ以外で native が要るプラグインは、native を**自分の管理 DLL に埋め込み**、
