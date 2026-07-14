@@ -20,7 +20,8 @@ ai-harness-main [モード] [オプション]
 | [`--restart`](#--ensure--restart--stop) | 停止→起動（`lib/` の DLL 差し替え反映） | 0 |
 | [`--stop`](#--ensure--restart--stop) | 稼働中の daemon を停止する | 0 |
 | [`--standalone`](#--standalone) | daemon を介さず stdin を 1 件処理して終了する | 0=許可 / 2=deny |
-| [`--update`](#--update) | プラグインと本体を更新する | 0 / 非 0 |
+| [`--update`](#--update) | 全プラグインと本体を更新する | 0 / 非 0 |
+| [`--update <プラグイン名>`](#--update-プラグイン名) | 指定した 1 プラグインのみ更新する | 0 / 非 0 |
 | [`--validate`](#--validate-プロジェクト) | 設定で hook が通る状態か検証する | 0=成功 / 1=失敗 |
 | [`--doctor`](#--doctor) | この配置でハーネスが機能するか診断する | 0=致命的問題なし / 1=error あり |
 | [`--project`](#--project) | daemon がメモリに展開しているプロジェクト一覧 | 0 / 1=引数エラー |
@@ -87,6 +88,18 @@ echo '{"hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command"
 
 定義ファイル（`plugins.yml`）の書式は [configuration.md](configuration.md)、内部設計は
 [self-update.md](self-update.md) を参照。
+
+### `--update <プラグイン名>`
+
+指定した 1 プラグインだけを更新する。名前は `plugins.yml` の各エントリの**リポジトリ名**（URL 末尾）で照合する。
+
+```sh
+ai-harness-main --update ai-harness-file-rules
+```
+
+- 本体（`ai-harness-main` 自身）の自己更新は**行わない**。
+- clone／build して `lib/` へ配置したあと、新しい DLL を反映するため稼働中の daemon を再起動する。
+- 名前が `plugins.yml` のどれとも一致しなければ、指定できる名前を示して異常終了（非 0）。
 
 ### `--health`
 

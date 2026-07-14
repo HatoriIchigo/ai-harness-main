@@ -113,6 +113,7 @@ Claude Code の `settings.json` では hook コマンドに **`ai-harness-main`*
 | `--daemon` / `--ensure` / `--restart` / `--stop` | daemon の制御。`--restart` は `lib` のプラグイン DLL 差し替え反映用 |
 | `--standalone` | daemon を介さず stdin を 1 件処理して終了（テスト・フォールバック） |
 | `--update` | `config/plugins.yml` に従いプラグインを `lib/` へ配置し、本体自身も置換（自己更新） |
+| `--update <プラグイン名>` | 指定した 1 プラグインのみ更新（本体自己更新はしない）。daemon 再起動で反映 |
 | `--validate [プロジェクト]` | 設定で hook が通る状態か検証。0=成功 / 1=失敗 |
 | `--doctor` | この配置でハーネスが機能するか診断（`lib`・native・daemon・`git`/`dotnet`） |
 | `--project` / `--logs` / `--plugin` | 読み取り専用の情報表示（展開中プロジェクト／ログ／プラグイン） |

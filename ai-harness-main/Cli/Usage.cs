@@ -20,7 +20,8 @@ internal static class Usage
           --standalone              daemon を介さず stdin を 1 件処理する
 
         更新:
-          --update                  プラグインと本体を更新する
+          --update                  全プラグインと本体を更新する
+          --update <プラグイン名>   指定した 1 プラグインのみ更新する（本体自己更新はしない）
           --health                  起動検証（ランタイムが正常起動すれば 0）
 
         検証:

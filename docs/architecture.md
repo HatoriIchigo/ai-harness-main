@@ -38,6 +38,7 @@ ai-harness-main  ──┐
 | `--restart` | daemon を停止後に再起動（`lib` のプラグイン DLL 差し替え反映用） |
 | `--standalone` | daemon を介さず stdin の hook JSON を 1 件処理して終了（テスト・フォールバック） |
 | `--update` | `config/plugins.yml` に従いプラグインを更新し、続けて本体自身も自己更新。詳細は [self-update.md](self-update.md) |
+| `--update <プラグイン名>` | 指定した 1 プラグインのみ更新（リポジトリ名で照合）。daemon 再起動で反映。本体自己更新はしない |
 | `--apply-update` | 内部モード。`--update` が publish した tmp の新バイナリが起動し、インストール先の実行体を置換 |
 | `--health` | 起動検証用。ランタイムが正常起動すれば 0 を返す（自己更新の健全性判定に使う） |
 | `--project` | 稼働中の daemon がメモリに展開しているプロジェクト一覧を表示 |

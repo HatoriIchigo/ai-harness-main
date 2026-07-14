@@ -16,6 +16,7 @@ namespace ai_harness_main;
 ///   --standalone … daemon を介さず stdin を直接 1 件処理して終了（テスト・フォールバック）。
 ///   --update     … config/plugins.yml に従い拡張プラグインを repos/ へ clone／build し lib/ へ配置し、
 ///                  続けて本体自身も tmp へ publish して置換（自己更新）。git／dotnet 未導入なら異常終了（非 0）。
+///   --update &lt;plugin name&gt; … その 1 プラグインのみ更新（clone／build／配置＋daemon 再起動）。本体自己更新はしない。
 ///   --apply-update … 内部モード（ユーザ非公開）。--update が publish した tmp の新バイナリから起動され、
 ///                  インストール先の実行体を安全に置換する。
 ///   --health     … 起動検証用。ランタイムが正常起動できれば 0 を返す（自己更新のロールバック判定に使う）。
@@ -77,7 +78,16 @@ public static class Program
                 return await RunStandaloneAsync().ConfigureAwait(false);
 
             case "--update":
-                return PluginInstaller.Run();
+            {
+                // 位置引数は更新対象プラグイン名 1 個（省略時は全プラグイン＋本体自己更新）。
+                if (!TryParseSingleOptionalName(args, "プラグイン", out var pluginName, out var updateError))
+                {
+                    await Console.Error.WriteLineAsync(updateError).ConfigureAwait(false);
+                    await Console.Error.WriteLineAsync(Usage.Text).ConfigureAwait(false);
+                    return ExitUsage;
+                }
+                return PluginInstaller.Run(pluginName);
+            }
 
             case "--apply-update":
                 return SelfUpdater.ApplyUpdate(args);
@@ -104,7 +114,7 @@ public static class Program
             {
                 UseUtf8Output();
                 // 位置引数は「プラグイン名」1 個（情報表示系の「プロジェクトルート」とは別物ゆえ個別に解釈）。
-                if (!TryParseFireArgs(args, out var pluginName, out var fireError))
+                if (!TryParseSingleOptionalName(args, "プラグイン", out var pluginName, out var fireError))
                 {
                     await Console.Error.WriteLineAsync(fireError).ConfigureAwait(false);
                     await Console.Error.WriteLineAsync(Usage.Text).ConfigureAwait(false);
@@ -139,12 +149,14 @@ public static class Program
     }
 
     /// <summary>
-    /// <c>--fire</c> の引数を解釈する。位置引数は対象プラグイン名 1 個のみ（未指定は全プラグイン＝null）。
-    /// 未知のオプションや複数の位置引数は <paramref name="error"/> を立てて <c>false</c>。
+    /// 位置引数を任意の名前 1 個（<c>--fire</c> / <c>--update</c> のプラグイン名）として解釈する。
+    /// 未指定は <paramref name="name"/> が null。未知のオプションや複数の位置引数は <paramref name="error"/> を
+    /// 立てて <c>false</c>。<paramref name="itemLabel"/> はエラー文言に使う語（例: 「プラグイン」）。
     /// </summary>
-    private static bool TryParseFireArgs(string[] args, out string? pluginName, out string error)
+    private static bool TryParseSingleOptionalName(
+        string[] args, string itemLabel, out string? name, out string error)
     {
-        pluginName = null;
+        name = null;
         error = "";
         for (var i = 1; i < args.Length; i++)
         {
@@ -154,12 +166,12 @@ public static class Program
                 error = $"不明なオプション: {arg}";
                 return false;
             }
-            if (pluginName is not null)
+            if (name is not null)
             {
-                error = $"--fire に指定できるプラグインは 1 つだけです: {pluginName} / {arg}";
+                error = $"{itemLabel}は 1 つだけ指定してください: {name} / {arg}";
                 return false;
             }
-            pluginName = arg;
+            name = arg;
         }
         return true;
     }
