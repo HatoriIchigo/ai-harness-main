@@ -62,7 +62,10 @@ internal sealed class ProjectContext : IDisposable
             logger.Write(LogLevel.Warning, warning);
         }
 
-        var validation = ValidateAndInit(registry.Types, config, logger.Emit);
+        // 登録（初回活性化）時のみ rule を配置する。宛先はこのプロジェクトの .claude/rules。
+        // Reload / --validate は copyRulesTo を渡さない（配置しない）。
+        var rulesDir = Path.Combine(projectRoot, ".claude", "rules");
+        var validation = ValidateAndInit(registry.Types, config, logger.Emit, rulesDir);
         // state ストアは設定ホットリロード（有効プラグイン再構築）とは独立に 1 つ保持する。
         var stateStore = StateStore.Create(projectRoot, globalLog);
 
@@ -189,9 +192,15 @@ internal sealed class ProjectContext : IDisposable
     ///
     /// ログの宛先は <paramref name="log"/>。<c>--validate</c> から呼ぶときはログを捨てられるよう
     /// <see cref="Logger"/> ではなくデリゲートを取る（検証がプロジェクトのログを汚さないため）。
+    ///
+    /// <paramref name="copyRulesTo"/> が非 null のとき、有効化・Init 済みの各プラグインの
+    /// <see cref="PluginBase.CopyRule"/> をそのディレクトリへ実行し rule を配置する（<c>Create</c> のみ渡す。
+    /// <c>Reload</c> / <c>--validate</c> は null＝配置しない）。配置は hook のゲートではないため、
+    /// 失敗しても検証結果には影響させず warning ログに留める（フェイルオープン）。
     /// </summary>
     public static StartupValidation ValidateAndInit(
-        IReadOnlyList<Type> types, ProjectConfig config, Action<LogEntry> log)
+        IReadOnlyList<Type> types, ProjectConfig config, Action<LogEntry> log,
+        string? copyRulesTo = null)
     {
         var toolToggles = config.ToolToggles;
         var valid = new List<Type>();
@@ -270,6 +279,24 @@ internal sealed class ProjectContext : IDisposable
             }
 
             log(LogEntry.Info("起動しました") with { Source = name });
+
+            // rule 配布（copyRulesTo は Create のときのみ非 null）。hook のゲートではないので、
+            // 失敗しても検証を止めず warning に留める（フェイルオープン）。
+            if (copyRulesTo is not null)
+            {
+                try
+                {
+                    if (plugin.CopyRule(copyRulesTo) is { } written)
+                    {
+                        log(LogEntry.Info($"rule を配置: {written}") with { Source = name });
+                    }
+                }
+                catch (Exception ex)
+                {
+                    log(LogEntry.Warning($"rule 配置に失敗（継続）: {ex.Message}") with { Source = name });
+                }
+            }
+
             valid.Add(type);
         }
 
