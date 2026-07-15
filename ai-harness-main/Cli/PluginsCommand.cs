@@ -105,6 +105,10 @@ internal static class PluginsCommand
             return 1;
         }
 
+        // 有効化するプラグインの設定 YAML が無ければ、同梱のデフォルト設定を配置する（既存は上書きしない）。
+        // これで直後の CanEnable が「設定 YAML 不在」でフェイルクローズせず、有効化を通せる。
+        EnsureDefaultConfigs(options.Toggles, config.ConfigDir, registry);
+
         if (!CanEnable(options.Toggles, config, registry, out var blockers))
         {
             Console.Error.WriteLine("有効化を中止しました（この設定では hook が全て deny されます）:");
@@ -140,6 +144,55 @@ internal static class PluginsCommand
         // 書き換え後の状態を読み直して表示する（この表が daemon の見るものと一致する）。
         WriteEnabledTable(ProjectConfig.Load(root, out _), plugins);
         return 0;
+    }
+
+    /// <summary>
+    /// 有効化するプラグインのうち、設定 YAML（<see cref="PluginBase.ConfigName"/>）がプロジェクトの config に
+    /// 無いものへ、同梱のデフォルト設定（<see cref="PluginBase.CopyDefaultConfig"/>）を配置する。既存は上書きしない。
+    ///
+    /// フェイルクローズ系プラグイン（設定不備＝全 deny）は、有効化しても設定 YAML が無いと直後の
+    /// <see cref="CanEnable"/> で拒否されてしまう。有効化の意思がある今このタイミングで「有効化しても即 deny
+    /// せず・フェイルクローズもしない安全既定」の雛形を置き、そのまま有効化を通せるようにする。無効化のみの
+    /// 操作では何もしない。
+    /// </summary>
+    private static void EnsureDefaultConfigs(
+        IReadOnlyList<(string Name, bool Enable)> toggles, string configDir, PluginRegistry registry)
+    {
+        var enabling = toggles.Where(t => t.Enable).Select(t => t.Name).ToHashSet(StringComparer.Ordinal);
+        if (enabling.Count == 0)
+        {
+            return;
+        }
+
+        foreach (var type in registry.Types)
+        {
+            PluginBase plugin;
+            try
+            {
+                plugin = (PluginBase)Activator.CreateInstance(type)!;
+            }
+            catch
+            {
+                continue; // 生成できない型は CanEnable/起動検証側で扱う。
+            }
+            if (!enabling.Contains(plugin.PluginName))
+            {
+                continue;
+            }
+
+            try
+            {
+                if (plugin.CopyDefaultConfig(configDir) is { } written)
+                {
+                    Console.Out.WriteLine($"デフォルト設定を作成: {written}");
+                }
+            }
+            catch (Exception ex)
+            {
+                // 配置失敗は致命ではない（設定が無いままなら CanEnable が拒否する）。理由だけ出す。
+                Console.Error.WriteLine($"{plugin.PluginName}: デフォルト設定の作成に失敗: {ex.Message}");
+            }
+        }
     }
 
     /// <summary>
