@@ -16,7 +16,11 @@ internal static class PluginInstaller
     private const int ExitOk = 0;
     private const int ExitError = 1;
 
-    public static int Run()
+    /// <param name="pluginName">
+    /// 指定時はその 1 プラグインのみ更新する（<c>--update &lt;plugin name&gt;</c>）。名前は plugins.yml の各
+    /// エントリのリポジトリ名（URL 末尾）と照合する。null（引数なしの <c>--update</c>）は全プラグイン＋本体自己更新。
+    /// </param>
+    public static int Run(string? pluginName = null)
     {
         // 前提: git / dotnet が無ければ異常終了。
         if (!CommandExists("git"))
@@ -52,6 +56,12 @@ internal static class PluginInstaller
         Directory.CreateDirectory(InstallPaths.ReposDir);
         Directory.CreateDirectory(InstallPaths.LibDir);
 
+        return pluginName is null ? RunAll(config) : RunSingle(config, pluginName);
+    }
+
+    /// <summary>全プラグイン＋本体自己更新（引数なしの <c>--update</c>）。従来動作。</summary>
+    private static int RunAll(PluginsConfig config)
+    {
         // ---- プラグイン更新（同期） ----
         if (config.Plugins.Count > 0)
         {
@@ -130,6 +140,60 @@ internal static class PluginInstaller
             Daemon.Restart();
         }
         return selfCode;
+    }
+
+    /// <summary>
+    /// 単一プラグインのみ更新する（<c>--update &lt;plugin name&gt;</c>）。<paramref name="pluginName"/> は
+    /// plugins.yml 各エントリのリポジトリ名（URL 末尾）と照合する。本体自己更新は行わず、新 DLL を反映するため
+    /// daemon を再起動する。名前が一致しない場合は指定可能な名前を示して異常終了。
+    /// </summary>
+    private static int RunSingle(PluginsConfig config, string pluginName)
+    {
+        var entry = config.Plugins.FirstOrDefault(
+            p => string.Equals(RepoName(p.Path), pluginName, StringComparison.OrdinalIgnoreCase));
+        if (entry is null)
+        {
+            Console.Error.WriteLine($"plugins.yml に一致するプラグインがない: {pluginName}");
+            Console.Error.WriteLine(config.Plugins.Count == 0
+                ? "plugins.yml に plugins の対象がない。"
+                : $"指定できるプラグイン: {string.Join(", ", config.Plugins.Select(p => RepoName(p.Path)))}");
+            return ExitError;
+        }
+
+        // 拡張プラグインは baselib を兄弟ディレクトリ相対参照でビルド時参照するため、ビルド前に用意する。
+        try
+        {
+            Console.WriteLine($"==== baselib: {config.Baselib.Path} ({config.Baselib.Branch}) ====");
+            var baselibDir = Path.Combine(InstallPaths.ReposDir, BaselibDirName);
+            CloneOrUpdate(config.Baselib.Path, config.Baselib.Branch, baselibDir);
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"baselib の用意に失敗（プラグインをビルドできない）: {ex.Message}");
+            return ExitError;
+        }
+
+        try
+        {
+            Console.WriteLine();
+            Console.WriteLine($"==== {entry.Path} ({entry.Branch}) ====");
+            InstallOne(entry);
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"失敗: {entry.Path} — {ex.Message}");
+            return ExitError;
+        }
+
+        // 単一プラグイン更新は本体自己更新を伴わない。新 DLL を反映するため daemon を再起動する。
+        if (Daemon.IsRunning())
+        {
+            Console.WriteLine("daemon を再起動して変更を反映。");
+            Daemon.Restart();
+        }
+        Console.WriteLine();
+        Console.WriteLine($"プラグイン {RepoName(entry.Path)} を更新しました。");
+        return ExitOk;
     }
 
     /// <summary>

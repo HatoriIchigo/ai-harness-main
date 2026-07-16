@@ -1,5 +1,6 @@
 using System.Text.Encodings.Web;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using ai_harness_baselib;
 
 namespace ai_harness_main;
@@ -38,7 +39,15 @@ internal sealed class Logger
     /// <see cref="LogEntry"/> を閾値判定して出力する。source 未設定は claude（ハーネス由来）。
     /// stderr へは <c>[LEVEL] &lt;source&gt;: メッセージ</c>、ファイルへは JSON 1 行で記録。
     /// </summary>
-    public void Emit(LogEntry entry)
+    public void Emit(LogEntry entry) => Emit(entry, fields: null);
+
+    /// <summary>
+    /// 構造化フィールドを添えて出力する。<paramref name="fields"/> は JSON 1 行へそのまま追加され、
+    /// stderr の人間向け表示には出ない。既定の 4 キー（timestamp／level／source／message）は上書きしない。
+    ///
+    /// 既存の読み手は message だけを見るため、フィールドを増やしても後方互換。
+    /// </summary>
+    public void Emit(LogEntry entry, IReadOnlyDictionary<string, string?>? fields)
     {
         if (entry.Level < _minLevel)
         {
@@ -52,18 +61,32 @@ internal sealed class Logger
             Console.Error.WriteLine($"[{entry.Level.ToString().ToUpperInvariant()}] {source}: {entry.Message}");
         }
 
-        var record = new
+        var record = new JsonObject
         {
-            timestamp = DateTime.Now.ToString("o"),
-            level = entry.Level.ToString(),
-            source,
-            message = entry.Message,
+            ["timestamp"] = DateTime.Now.ToString("o"),
+            ["level"] = entry.Level.ToString(),
+            ["source"] = source,
+            ["message"] = entry.Message,
         };
-        AppendToFile(JsonSerializer.Serialize(record, JsonOptions));
+        if (fields is not null)
+        {
+            foreach (var (key, value) in fields.Where(f => !record.ContainsKey(f.Key)))
+            {
+                record[key] = value;
+            }
+        }
+        AppendToFile(record.ToJsonString(JsonOptions));
     }
 
     /// <summary>レベルとメッセージから直接出力する（main 内部＝source claude）。</summary>
     public void Write(LogLevel level, string message) => Emit(new LogEntry(level, message, "claude"));
+
+    /// <summary>
+    /// deny を監査レコードとして記録する。ルールによる deny（<see cref="LogLevel.Warning"/>）と、
+    /// 検証できずにブロックしたフェイルクローズ（<see cref="LogLevel.Error"/>）をレベルで分ける。
+    /// </summary>
+    public void WriteDeny(DenyEvent deny) => Emit(
+        new LogEntry(deny.Kind.Level(), deny.Summary(), deny.Plugin), deny.ToFields());
 
     private void AppendToFile(string line)
     {

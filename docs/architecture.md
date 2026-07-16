@@ -38,8 +38,35 @@ ai-harness-main  ──┐
 | `--restart` | daemon を停止後に再起動（`lib` のプラグイン DLL 差し替え反映用） |
 | `--standalone` | daemon を介さず stdin の hook JSON を 1 件処理して終了（テスト・フォールバック） |
 | `--update` | `config/plugins.yml` に従いプラグインを更新し、続けて本体自身も自己更新。詳細は [self-update.md](self-update.md) |
+| `--update <プラグイン名>` | 指定した 1 プラグインのみ更新（リポジトリ名で照合）。daemon 再起動で反映。本体自己更新はしない |
 | `--apply-update` | 内部モード。`--update` が publish した tmp の新バイナリが起動し、インストール先の実行体を置換 |
 | `--health` | 起動検証用。ランタイムが正常起動すれば 0 を返す（自己更新の健全性判定に使う） |
+| `--project` | 稼働中の daemon がメモリに展開しているプロジェクト一覧を表示 |
+| `--logs [プロジェクト]` | ログ表示。無指定は実行体隣の `logs/`、指定時はそのプロジェクトの `.claude/harness/logs/` |
+| `--plugin [プロジェクト]` | 無指定は `lib/` のプラグイン一覧、指定時はそのプロジェクトでの有効/無効 |
+| `--validate [プロジェクト]` | 設定で hook が通る状態か検証（無指定は cwd から解決）。0=成功 / 1=失敗 |
+| `--doctor` | 配置の診断（`lib`・native・`resources`・daemon・`git`/`dotnet`）。0=error なし / 1=error あり |
+| `--fire [プラグイン名]` | cwd のプロジェクトで有効プラグインの能動スキャン（`Fire`）を daemon 経由で一斉起動（無指定は全プラグイン）。未起動なら daemon を起動。hook と独立のレポートでゲートではない。0=問題なし / 2=検出 / 1=接続・実行不能 |
+| `--version` / `-v` | 版・ランタイム・実行体パスを表示する |
+| `--help` / `-h` | 使い方を表示する |
+
+bridge になるのは**引数なし**のときだけ。未知の引数は使い方を出して 1 で終わる。bridge へ落とすと
+端末では stdin 待ちで固まり、空 stdin では「hookJson が空」というフェイルクローズになるため。
+
+情報表示モード（`--project`／`--logs`／`--plugin`）は hook 規約の外にあり、成功 0・引数エラー 1 を返す。
+`--logs` は `--n <件数>`（新しい順に上位 N 件）・`--filter <レベル,…>`（`trace`／`debug`／`info`／`warn`／`error`）・
+`--deny`（deny の監査レコードのみ）を取り、フィルタしてから件数を切る。`--project` は daemon へ照会するが
+**起こさない**（未起動なら空一覧）。`--plugin` は daemon を介さず `lib/` と `common.yml` を直接読む。
+
+## deny の記録
+
+deny は集約されて Claude Code へ返るが、集約後の理由文字列からは「どのプラグインがなぜ止めたか」を
+復元できない。そこで `PluginHost` は deny したプラグインごとに `DenyEvent` を起こし、`ProjectContext` が
+1 件ずつ構造化ログとして記録する（`event=deny`／`kind`／`plugin`／`tool`／`hookEvent`／`reason`）。
+
+由来を `DenyKind` で 2 つに分ける。**`rule`**（プラグインがルールに従って拒否＝設計どおり、`warn`）と、
+**`failclose`**（生成失敗・クラッシュ・`common.yml` 不正など検証できずにブロック＝ハーネス側の異常、`error`）。
+両者は監査上まったく意味が違うため、レベルで区別して `--logs --deny --filter error` が前者を拾わないようにする。
 
 ## コンポーネント
 
@@ -48,22 +75,38 @@ ai-harness-main  ──┐
 | ファイル | 責務 |
 |---|---|
 | `Program.cs` | エントリ。モード分岐と standalone 処理 |
+| `Cli/CliOptions.cs` | 情報表示モードの引数解釈（プロジェクト位置引数・`--n`・`--filter`） |
+| `Cli/ProjectsCommand.cs` | `--project`。daemon へ照会して一覧表示 |
+| `Cli/LogsCommand.cs` | `--logs`。ログディレクトリを解決して表示 |
+| `Cli/PluginsCommand.cs` | `--plugin`。`lib/` の発見結果と `common.yml` のトグルを突き合わせ。`--enable`/`--disable` で書き換え |
+| `Cli/CommonYamlEditor.cs` | `common.yml` の `tools` を行単位で最小編集（コメント・キー順を保つ） |
+| `Cli/LogReader.cs` | `*.jsonl` を新しい順に読む（追記中でも読めるよう共有オープン） |
+| `Cli/TextTable.cs` | `a \| b` 形式の等幅テーブル出力 |
+| `Cli/ValidateCommand.cs` | `--validate`。daemon と同じ起動検証を hook 抜きで実行 |
+| `Cli/DoctorCommand.cs` | `--doctor`。診断項目を集約して表示・終了コード決定 |
+| `Cli/DoctorProbes.cs` | 個々の診断（`lib`・native の実ロード・daemon 照会・外部コマンド） |
+| `Cli/VersionCommand.cs` | `--version`。版・ランタイム・実行体パス |
+| `Cli/Usage.cs` | `--help` と不明引数エラーで出す使い方 |
 | `Bridge/Bridge.cs` | bridge モード。cwd→ルート解決、封筒生成、daemon へ送信、応答出力、未起動時の起動 |
 | `Bridge/ProjectLocator.cs` | cwd から `.claude` を上方探索しプロジェクトルートを決定 |
 | `Plugins/PluginLoader.cs` | `lib/*.dll` を走査し `PluginBase` 派生型を発見 |
 | `Plugins/PluginRegistry.cs` | 共有型レジストリ。起動時 1 回の型発見を保持（全プロジェクト共有） |
 | `Plugins/ProjectContext.cs` | プロジェクト別の検証・`Init`・発火・設定ホットリロード・最終アクセス管理 |
+| `Plugins/StartupValidation.cs` | 起動検証の結果（発火対象の型＋有効化したのに起動できなかった理由） |
 | `Plugins/PluginHost.cs` | リクエスト毎にインスタンス生成・並列発火・deny 先勝ち集約 |
-| `Plugins/PluginLoadContext.cs` | プラグイン DLL 用 ALC。baselib は既定 ALC へ委ね型同一性を保つ |
+| `Plugins/PluginLoadContext.cs` | プラグイン DLL 用 ALC。baselib は既定 ALC へ委ね型同一性を保つ。管理依存は `lib/`、ネイティブは `runtimes/<rid>/native/` を直接プローブ |
 | `Ipc/Daemon.cs` | 常駐サーバ。マルチテナント振り分け・アイドル回収・自動停止・ensure／stop／restart |
-| `Ipc/RequestEnvelope.cs` | bridge→daemon の封筒（`type`／`projectRoot`／`hookJson`） |
+| `Ipc/RequestEnvelope.cs` | bridge／CLI→daemon の封筒（`type`＝`hook`／`stop`／`projects`、`projectRoot`、`hookJson`） |
 | `Ipc/HarnessPipe.cs` | パイプ名生成（実行体ディレクトリの SHA256） |
 | `Ipc/HookOutput.cs` | Claude へ返す hook 出力 JSON（`hookSpecificOutput.additionalContext`）の組み立て |
 | `Ipc/HookResponse.cs` | daemon→bridge の応答ペイロード |
+| `Ipc/ProjectsResponse.cs` | daemon→CLI（`--project`）の応答ペイロード |
+| `Ipc/DaemonClient.cs` | CLI から daemon への照会。daemon は起動しない |
 | `Ipc/Framing.cs` | 長さ前置フレーミング |
 | `Config/InstallPaths.cs` | 実行体基準のグローバルパス（`lib`／`run`／グローバル log） |
 | `Config/ProjectConfig.cs` | プロジェクト個別設定（`<ルート>/.claude/harness/config/common.yml` ロード） |
-| `Logging/Logger.cs` | レベルフィルタ＋ログファイルへ集約（出力先ディレクトリは引数） |
+| `Logging/Logger.cs` | レベルフィルタ＋ログファイルへ集約（出力先ディレクトリは引数）。構造化フィールドの付加 |
+| `Logging/DenyEvent.cs` | deny の監査レコード（由来＝`rule`／`failclose`、対象ツール、理由） |
 
 ## マルチテナント
 
@@ -104,6 +147,23 @@ ai-harness-main  ──┐
 - `Init` を実行するインスタンスと `Action` のインスタンスは**別**。状態は持ち越さない。
 - プラグインのクラッシュ（`LoadConfig`／`Action` の例外）や生成失敗は**フェイルクローズ**（当該プラグインを deny 扱いにしてブロック）。検証を完了できないアクションを素通りさせないため。
 - `Tools`/`Events`/`FileNames`/`BashCommands` が全て `null` のプラグインは発火条件が無く、除外はされないが一切発火しない（起動時に警告ログ）。
+
+### 起動検証のフェイルクローズ
+
+`common.yml` の `tools` で**有効化した**プラグインが発火できる状態に到達できなかった場合、それを除外して
+素通りさせるとガードが消える。`ValidateAndInit` は理由を `StartupValidation.Errors` へ積み、`RunAsync` が
+そのプロジェクトの hook をブロックする。対象は次の 4 つ。
+
+| 事象 | 扱い |
+|---|---|
+| `tools` で有効化したが `lib` に存在しない | ブロック |
+| `Tools`／`Events` の検証に失敗 | ブロック |
+| `LoadConfig` に失敗（設定 YAML が無い・壊れている） | ブロック |
+| `Init` が例外を投げた | ブロック |
+
+インスタンス生成に失敗した型は `PluginName` を取れず有効/無効を判定できないため、**有効かもしれないものを
+検証できなかった**として同じくブロックする。`tools: false`／未記載のプラグインは検証対象外（素通り）。
+設定を直せばホットリロードでコンテキストが再構築され、ブロックは解除される。
 
 ## ホットリロード
 
