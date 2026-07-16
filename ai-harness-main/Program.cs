@@ -56,6 +56,10 @@ public static class Program
 
     public static async Task<int> Main(string[] args)
     {
+        // 出力の読み手（端末／ai-harness-tui／Claude Code）は一様に UTF-8 を前提とするため、
+        // モードに依らず最初に固定する。
+        UseUtf8Output();
+
         var mode = args.Length > 0 ? args[0] : null;
 
         switch (mode)
@@ -115,7 +119,6 @@ public static class Program
 
             case "--fire":
             {
-                UseUtf8Output();
                 // 位置引数は「プラグイン名」1 個（情報表示系の「プロジェクトルート」とは別物ゆえ個別に解釈）。
                 if (!TryParseSingleOptionalName(args, "プラグイン", out var pluginName, out var fireError))
                 {
@@ -128,12 +131,10 @@ public static class Program
 
             case "--version":
             case "-v":
-                UseUtf8Output();
                 return VersionCommand.Run();
 
             case "--help":
             case "-h":
-                UseUtf8Output();
                 Console.Out.WriteLine(Usage.Text);
                 return ExitAllow;
 
@@ -144,7 +145,6 @@ public static class Program
             default:
                 // 未知の引数を bridge に落とすと、端末では stdin 待ちで固まり、空 stdin では
                 // 「hookJson が空」というフェイルクローズになる。typo を hook として扱わない。
-                UseUtf8Output();
                 await Console.Error.WriteLineAsync($"不明な引数: {mode}").ConfigureAwait(false);
                 await Console.Error.WriteLineAsync(Usage.Text).ConfigureAwait(false);
                 return ExitUsage;
@@ -182,8 +182,6 @@ public static class Program
     /// <summary>情報表示モードを実行する。<c>--project</c> は位置引数・オプションを取らない。</summary>
     private static async Task<int> RunInfoAsync(string mode, CliOptions options)
     {
-        UseUtf8Output();
-
         // 引数をまったく取らないモード。
         if (mode is "--project" or "--doctor")
         {
@@ -219,21 +217,28 @@ public static class Program
     }
 
     /// <summary>
-    /// 情報表示モードの stdout／stderr を UTF-8（BOM なし）にする。既定では Windows のコンソール
-    /// コードページ（cp932 等）で書かれ、パイプで読む側（ai-harness-tui）も端末も日本語が化けるため。
-    /// hook 経路（bridge／daemon）の出力は Claude Code が読むので触らない。
+    /// stdout／stderr を UTF-8（BOM なし）にする。全モードで呼ぶ。既定では Windows のコンソール
+    /// コードページ（cp932 等）で書かれ、読む側が UTF-8 を前提とするため日本語が化ける。
+    /// 読み手は情報表示モードなら端末・パイプ（ai-harness-tui）、hook 経路（bridge／standalone）なら
+    /// Claude Code で、いずれも UTF-8 を期待する。Linux は既定が UTF-8 のため実質 Windows 向けの是正。
+    ///
+    /// <see cref="Console.SetOut"/>／<see cref="Console.SetError"/> で UTF-8 のライタを据えるのが本体。
+    /// <see cref="Console.OutputEncoding"/> はコンソールハンドルが無い（hook のようにリダイレクトされた）
+    /// 環境では設定できないため、端末表示を整える補助として試すだけに留める。
     /// </summary>
     private static void UseUtf8Output()
     {
+        var utf8 = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
         try
         {
-            var utf8 = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
             Console.OutputEncoding = utf8;
         }
         catch (IOException)
         {
-            // コンソールハンドルが無い環境では設定できない。既定のまま続行する。
+            // コンソールハンドルが無い環境では設定できない。以下のライタ差し替えは効くため続行する。
         }
+        Console.SetOut(new StreamWriter(Console.OpenStandardOutput(), utf8) { AutoFlush = true });
+        Console.SetError(new StreamWriter(Console.OpenStandardError(), utf8) { AutoFlush = true });
     }
 
     /// <summary>
