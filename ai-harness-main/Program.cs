@@ -9,6 +9,8 @@ namespace ai_harness_main;
 ///
 ///   （引数なし） … bridge。hook ごとに Claude Code が叩く受け口。stdin の hook JSON を読み、cwd から
 ///                  プロジェクトルートを解決し、封筒で daemon へ中継する。未起動なら daemon を起動。
+///                  stdin が端末（人間が直接起動）または空なら hook 経由ではないため、読まずに使い方を
+///                  出して 1 で終える（端末で入力待ちにならない）。
 ///   --daemon     … 常駐サーバー。名前付きパイプで待ち受け、プロジェクト別に処理。複数プロジェクト共有。
 ///   --ensure     … daemon 未起動なら detached 起動して終了。
 ///   --stop       … 稼働中の daemon を停止。
@@ -47,6 +49,8 @@ namespace ai_harness_main;
 /// 内部エラー・不正入力・検証不能は**フェイルクローズ**で 2（ブロック）に倒す。例外は bridge が daemon に
 /// まったく接続できない場合のみで、ロックアウト回避のため 0（許可）で継続する。
 /// 情報表示モードは hook 規約の外なので、成功 0 / 引数エラー 1 を返す。
+/// bridge が hook 入力そのものを受け取っていない（stdin が端末・空）ときも、ツールの許可／deny の判断では
+/// なく叩き方の誤りなので、hook 規約の外として 1 を返す。
 /// </summary>
 public static class Program
 {
@@ -226,7 +230,7 @@ public static class Program
     /// <see cref="Console.OutputEncoding"/> はコンソールハンドルが無い（hook のようにリダイレクトされた）
     /// 環境では設定できないため、端末表示を整える補助として試すだけに留める。
     /// </summary>
-    private static void UseUtf8Output()
+    internal static void UseUtf8Output()
     {
         var utf8 = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
         try

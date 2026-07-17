@@ -217,7 +217,8 @@ deny のレベルは由来で分かれる。**ルールが効いた deny は `wa
 | DLL を差し替えたのに反映されない | `ai-harness-main --restart`（設定 YAML はホットリロードされるが、DLL は daemon 再起動が要る） |
 | tree-sitter 系が全 deny する | native grammar のロード失敗。`--doctor` で切り分ける（`runtimes/<rid>/native/` が要る） |
 
-daemon は放っておいてよい。無アクセス 5 分で全プロジェクトを回収し、空になれば自分で終了する。
+daemon は放っておいてよい。無アクセス 30 分で全プロジェクトを回収し、空になれば自分で終了する
+（時間は `<インストール先>/config/daemon.yml` の `evictAfterMinutes` で変えられる）。
 
 ## プラグインを増やす
 

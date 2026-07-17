@@ -12,6 +12,13 @@ namespace ai_harness_main;
 /// daemon は常駐ゆえ各 hook プロセスにはなれないため、この短命プロセスが構造的に必要
 /// （hook spawn → 中継 → 応答 → 終了）。
 ///
+/// hook 入力のガード（hook 経由の起動でなければ、中継せず使い方エラー＝exit 1 で即終了する）:
+///   stdin が端末      … 人間が引数なしで直接叩いた形。読むと EOF が来ず入力待ちで固まるため、読まずに終了。
+///   stdin が空        … hook JSON が渡ってきていない（<c>&lt; /dev/null</c> 等）。中継しても解析できない。
+/// hook として呼ばれた場合は必ずリダイレクトされた stdin に JSON が載るため、この 2 つは hook 経路では起きない。
+/// deny（2）ではなく 1 で終えるのは、ツールをブロックする判断ではなく<b>叩き方の誤り</b>だから
+/// （Claude hook 規約でも 1 は非ブロッキングエラー）。
+///
 /// 応答の扱い:
 ///   deny（exitCode≠0） … 理由を stderr へ、その exit code で終了（2=ブロック）。
 ///   許可＋additionalContext … hook 出力 JSON（hookSpecificOutput.additionalContext）を stdout へ、exit 0。
@@ -23,8 +30,19 @@ internal static class Bridge
     private const int RetryCount = 15;
     private const int RetryDelayMs = 200;
 
+    /// <summary>hook 経由の起動ではない（叩き方の誤り）。ブロック判断ではないので deny(2) とは別。</summary>
+    private const int ExitUsage = 1;
+
     public static async Task<int> RunAsync()
     {
+        // stdin が端末 = hook ではなく人間が直接起動した。読みにいくと EOF が来ず固まるため、読む前に返す。
+        if (!Console.IsInputRedirected)
+        {
+            return await UsageErrorAsync(
+                "hook データが渡されていません（引数なしは Claude Code の hook から stdin 経由で呼ばれる受け口です）。")
+                .ConfigureAwait(false);
+        }
+
         byte[] stdin;
         using (var ms = new MemoryStream())
         {
@@ -40,6 +58,14 @@ internal static class Bridge
         }
 
         var hookJson = Encoding.UTF8.GetString(stdin);
+
+        // stdin は繋がっているが hook JSON が載っていない（`< /dev/null` 等）。中継しても解析できない。
+        if (string.IsNullOrWhiteSpace(hookJson))
+        {
+            return await UsageErrorAsync(
+                "hook データが空です（stdin から hook JSON を渡してください）。").ConfigureAwait(false);
+        }
+
         var hookEventName = ExtractHookEventName(stdin);
         var projectRoot = ProjectLocator.Resolve(Environment.CurrentDirectory);
 
@@ -73,6 +99,15 @@ internal static class Bridge
 
         // 接続不能 → fail-open（ブロックしない）。
         return 0;
+    }
+
+    /// <summary>hook 経由の起動ではない旨と使い方を stderr へ出し、使い方エラー（1）で終える。</summary>
+    private static async Task<int> UsageErrorAsync(string message)
+    {
+        Program.UseUtf8Output();
+        await Console.Error.WriteLineAsync(message).ConfigureAwait(false);
+        await Console.Error.WriteLineAsync(Usage.Text).ConfigureAwait(false);
+        return ExitUsage;
     }
 
     /// <summary>応答を Claude Code 向けに出力する。</summary>

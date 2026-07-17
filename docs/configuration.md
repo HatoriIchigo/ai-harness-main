@@ -11,7 +11,7 @@
 
 | パス | 用途 | 生成 |
 |---|---|---|
-| `<実行体>/config/` | 本体直下の設定（`plugins.yml`＝プラグインインストール定義） | 手動 |
+| `<実行体>/config/` | 本体直下の設定（`plugins.yml`＝プラグインインストール定義／`daemon.yml`＝daemon の寿命） | 手動 |
 | `<実行体>/lib/` | 共有プラグイン DLL の走査先（全プロジェクト共通） | 手動／`--update` |
 | `<実行体>/repos/` | `--update` がプラグインを clone／build する作業領域 | 自動（`--update`） |
 | `<実行体>/run/` | daemon 作業領域（`daemon.lock`） | 自動 |
@@ -58,6 +58,33 @@ plugins:
 
 > `--update` で `lib/` に入れただけではプラグインは発火しない。各プロジェクトの `common.yml` の
 > `tools` で当該 PluginName を `true` にして初めて有効化される（インストールと有効化は別）。
+
+## daemon.yml（daemon の寿命）
+
+本体（実行体）直下の `config/daemon.yml` に置く**グローバル**設定。単一の共有 daemon が全プロジェクトを
+さばくため、プロジェクト個別ではない。
+
+```yaml
+# プロジェクトの状態をメモリに保つ時間（分）。既定 30。
+evictAfterMinutes: 30
+
+# 接続が全く無い状態がこれを超えたら、生存プロジェクトの有無を確認する（分）。既定 5。
+idleShutdownMinutes: 5
+
+# スイーパの走査間隔（秒）。既定 60。
+sweepIntervalSeconds: 60
+```
+
+| キー | 既定 | 内容 |
+|---|---|---|
+| `evictAfterMinutes` | `30` | 無アクセスがこれを超えたプロジェクトをスイーパが回収する。次のアクセスで再構築されるため、短いほどメモリを解放しやすく、長いほど再構築（設定の再読込・`Init`）を避けられる |
+| `idleShutdownMinutes` | `5` | 接続途絶時に生存プロジェクトの有無を確認する間隔。空なら daemon 終了、生存していれば待受継続 |
+| `sweepIntervalSeconds` | `60` | 回収判定の粒度。実際の回収は最大この分だけ遅れる |
+
+- **メモリ保持時間を決めるのは `evictAfterMinutes` の 1 つだけ。** 全プロジェクトが回収されてメモリが空になった時点で daemon 自体も終了するため、この値が「Claude Code 終了後に daemon が居座る時間」の上限になる。`idleShutdownMinutes` は保持時間の上限ではなく、確認の間隔にすぎない。
+- 読むのは **daemon 起動時の 1 回のみ**。変更の反映には再起動が要る（`ai-harness-main --restart`）。プロジェクト個別設定のホットリロードとは別系統。
+- ファイルが無い・壊れている・値が 1 未満の場合は、その項目の**既定値で継続**する（警告ログを出す）。何も強制しない実行時パラメータのため、`common.yml` と違いフェイルクローズしない。
+- 起動時のログに実効値が出る（`daemon 起動 pipe=… 保持=30分 受付アイドル=5分 走査間隔=60秒`）。
 
 ## common.yml
 
@@ -146,10 +173,11 @@ marker: "DENYME"
 
 `common.yml`・各プラグイン YAML は**ホットリロード対象**。保存すると daemon が `FileSystemWatcher` で検知し、デバウンス後に当該プロジェクトの有効プラグイン集合を再構築（設定再ロード・`Init` 再実行）する。daemon の再起動は不要。
 
-`lib/` のプラグイン DLL を差し替えた場合のみ、型を読み直すため daemon の再起動が必要。
+`lib/` のプラグイン DLL を差し替えた場合と、`daemon.yml` を変えた場合のみ daemon の再起動が必要
+（前者は型を読み直すため、後者は起動時に 1 回しか読まないため）。
 
 ```sh
-ai-harness-main --restart   # lib の DLL 差し替えを反映
+ai-harness-main --restart   # lib の DLL 差し替え・daemon.yml の変更を反映
 ```
 
 ## ログ

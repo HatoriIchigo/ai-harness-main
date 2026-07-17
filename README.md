@@ -34,7 +34,7 @@ hook が叩かれると bridge モードで起動し、cwd からプロジェク
 - **ホットリロード**:
   プロジェクトの `common.yml`・各プラグイン YAML の変更を `FileSystemWatcher` で検知し無停止反映。
 - **アイドル回収＋自動停止**:
-  無アクセス 5 分でプロジェクト状態を破棄。全プロジェクトが回収されメモリが空になれば daemon 自体が終了（Claude 終了後の居座り防止）。
+  無アクセス 30 分でプロジェクト状態を破棄。全プロジェクトが回収されメモリが空になれば daemon 自体が終了（Claude 終了後の居座り防止）。時間は `config/daemon.yml` で変えられる。
 - **deny 先勝ち集約**:
   1 つでも非 0 を返せば全体 deny。理由を Claude Code へ返す。
 - **フェイルクローズ（検証できないなら通さない）**:
@@ -106,11 +106,13 @@ Claude Code の `settings.json` では hook コマンドに **`ai-harness-main`*
 ## 実行モード
 
 単一バイナリで、**第 1 引数のモードで役割が変わる**。bridge になるのは**引数なし**のときだけで、
-未知の引数は使い方を出して 1 で終わる（typo を hook として扱わない）。
+未知の引数は使い方を出して 1 で終わる（typo を hook として扱わない）。引数なしでも stdin から hook JSON が
+渡ってこなければ（端末から直接実行・空 stdin）、hook 経由ではないと判断して使い方を出し 1 で終わる。
+端末では stdin を読みにいかないため、入力待ちで固まらない。
 
 | 起動 | 役割 |
 |---|---|
-| （引数なし） | bridge。hook ごとに Claude Code が叩く受け口。stdin を daemon へ中継。未起動なら daemon を起動 |
+| （引数なし） | bridge。hook ごとに Claude Code が叩く受け口。stdin を daemon へ中継。未起動なら daemon を起動。stdin が端末・空なら使い方を出して 1 |
 | `--daemon` / `--ensure` / `--restart` / `--stop` | daemon の制御。`--restart` は `lib` のプラグイン DLL 差し替え反映用 |
 | `--standalone` | daemon を介さず stdin を 1 件処理して終了（テスト・フォールバック） |
 | `--update` | `config/plugins.yml` に従いプラグインを `lib/` へ配置し、本体自身も置換（自己更新） |
@@ -163,6 +165,7 @@ ai-harness-main/
     │   └── Framing.cs           長さ前置フレーミング
     ├── Config/
     │   ├── InstallPaths.cs      実行体基準のグローバルパス（config／lib／repos／run／グローバル log）
+    │   ├── DaemonConfig.cs      daemon の寿命設定（daemon.yml ロード。グローバル・起動時 1 回）
     │   └── ProjectConfig.cs     プロジェクト個別設定（common.yml ロード）
     ├── Install/
     │   ├── PluginsConfig.cs     plugins.yml ロード（self／baselib／plugins のインストール定義）
@@ -171,7 +174,8 @@ ai-harness-main/
     ├── Logging/
     │   └── Logger.cs            レベルフィルタ＋ログ集約（出力先は引数）
     ├── config/
-    │   └── plugins.yml          プラグインインストール定義（本体直下 config/ へ配置するサンプル）
+    │   ├── plugins.yml          プラグインインストール定義（本体直下 config/ へ配置するサンプル）
+    │   └── daemon.yml           daemon の寿命設定（本体直下 config/ へ配置するサンプル。省略時は既定値）
     └── resources/
         ├── common.yml           プロジェクト設定の既定テンプレート（--plugin --enable が新規作成に使う）
         └── phase.yml            フェーズ定義の既定テンプレート

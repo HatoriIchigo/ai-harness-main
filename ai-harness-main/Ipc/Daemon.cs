@@ -16,17 +16,12 @@ namespace ai_harness_main;
 /// そのプロジェクトの設定・ログ・有効プラグインで処理する。lib（型）は全プロジェクト共有。
 /// アイドル回収: 一定時間アクセスの無いプロジェクトはスイーパが回収（メモリ解放）。接続が一定時間
 /// 全く無ければ daemon 自体を終了する（Claude Code 終了後の居座り防止）。
+/// 各時間は <see cref="DaemonConfig"/>（<c>config/daemon.yml</c>）で変えられる。
 /// </summary>
 internal static class Daemon
 {
-    /// <summary>接続が無い状態がこれを超えたら daemon を終了する。</summary>
-    private static readonly TimeSpan IdleShutdown = TimeSpan.FromMinutes(5);
-
-    /// <summary>プロジェクトが無アクセスでこれを超えたらキャッシュを回収する。</summary>
-    private static readonly TimeSpan ProjectEvictAfter = TimeSpan.FromMinutes(5);
-
-    /// <summary>スイーパの走査間隔。</summary>
-    private static readonly TimeSpan SweepInterval = TimeSpan.FromSeconds(60);
+    /// <summary>寿命の設定（<c>config/daemon.yml</c>）。起動時に 1 回ロードする。</summary>
+    private static DaemonConfig _config = null!;
 
     // プロジェクトルート → コンテキスト。Lazy で生成の二重起動を防ぐ。
     private static readonly ConcurrentDictionary<string, Lazy<ProjectContext>> Projects =
@@ -42,6 +37,12 @@ internal static class Daemon
     public static async Task<int> RunAsync(Logger globalLog)
     {
         _globalLog = globalLog;
+
+        _config = DaemonConfig.Load();
+        foreach (var warning in _config.Warnings)
+        {
+            globalLog.Write(LogLevel.Warning, warning);
+        }
 
         FileStream lockFile;
         var lockPath = Path.Combine(InstallPaths.RunDir, "daemon.lock");
@@ -61,7 +62,12 @@ internal static class Daemon
             // 型発見はプロセス寿命で 1 回（全プロジェクト共有）。
             _registry = new PluginRegistry(globalLog.Emit, InstallPaths.LibDir);
             var pipeName = HarnessPipe.Name();
-            globalLog.Write(LogLevel.Info, $"daemon 起動 pipe={pipeName} 共有プラグイン型={_registry.Count}");
+            globalLog.Write(
+                LogLevel.Info,
+                $"daemon 起動 pipe={pipeName} 共有プラグイン型={_registry.Count} "
+                + $"保持={_config.EvictAfter.TotalMinutes:0.##}分 "
+                + $"受付アイドル={_config.IdleShutdown.TotalMinutes:0.##}分 "
+                + $"走査間隔={_config.SweepInterval.TotalSeconds:0.##}秒");
 
             _shutdownCts = new CancellationTokenSource();
             using var shutdownCts = _shutdownCts;
@@ -85,7 +91,10 @@ internal static class Daemon
         }
     }
 
-    /// <summary>接続受付ループ。<see cref="IdleShutdown"/> の間 1 件も接続が無ければ終了する。</summary>
+    /// <summary>
+    /// 接続受付ループ。<see cref="DaemonConfig.IdleShutdown"/> の間 1 件も接続が無ければ、生存プロジェクトの
+    /// 有無を確認し、空なら終了する（残っていれば待受を続ける）。
+    /// </summary>
     private static async Task AcceptLoopAsync(string pipeName, Logger globalLog)
     {
         while (true)
@@ -96,7 +105,7 @@ internal static class Daemon
 
             // アイドル（接続途絶）と、スイーパからの能動的終了シグナルの両方で受付を打ち切る。
             using var idleCts = CancellationTokenSource.CreateLinkedTokenSource(_shutdownCts.Token);
-            idleCts.CancelAfter(IdleShutdown);
+            idleCts.CancelAfter(_config.IdleShutdown);
             try
             {
                 await server.WaitForConnectionAsync(idleCts.Token).ConfigureAwait(false);
@@ -277,7 +286,7 @@ internal static class Daemon
         {
             while (!ct.IsCancellationRequested)
             {
-                await Task.Delay(SweepInterval, ct).ConfigureAwait(false);
+                await Task.Delay(_config.SweepInterval, ct).ConfigureAwait(false);
                 var removedAny = SweepStaleProjects();
                 // メモリ（プロジェクトキャッシュ）が全て空になったら daemon を自動停止する。
                 // 起動直後（まだ 1 件も生成していない）の誤停止を避けるため、回収が発生した場合のみ判定。
@@ -296,12 +305,12 @@ internal static class Daemon
     }
 
     /// <summary>
-    /// 無アクセスが <see cref="ProjectEvictAfter"/> を超えたプロジェクトを回収する。
+    /// 無アクセスが <see cref="DaemonConfig.EvictAfter"/> を超えたプロジェクトを回収する。
     /// 1 件以上回収したら true。
     /// </summary>
     private static bool SweepStaleProjects()
     {
-        var threshold = DateTime.UtcNow - ProjectEvictAfter;
+        var threshold = DateTime.UtcNow - _config.EvictAfter;
         var removedAny = false;
         foreach (var kv in Projects)
         {

@@ -68,7 +68,7 @@ dotnet publish ai-harness-main\ai-harness-main\ai-harness-main.csproj `
 <インストール先>/               実行体と共有資産（全プロジェクト共通）
 ├── ai-harness-main(.exe)       単一バイナリ（bridge／daemon／standalone）
 ├── lib/                        共有プラグイン（*.dll。マネージド依存 TreeSitter.dll 等も同居）
-├── config/                     本体設定（plugins.yml＝プラグインのインストール定義）
+├── config/                     本体設定（plugins.yml＝プラグインのインストール定義／daemon.yml＝daemon の寿命）
 ├── resources/                  プロジェクトへ配る既定テンプレート（common.yml・phase.yml）
 ├── runtimes/                   tree-sitter ネイティブ grammar（<rid>/native/*.dll）。host が起動時に事前ロード
 ├── run/                        daemon 作業領域（daemon.lock、自動生成）
@@ -151,6 +151,9 @@ mkdir -p <インストール先>/config
 cp ai-harness-main/ai-harness-main/config/plugins.yml <インストール先>/config/
 #    → 必要なプラグインの path / branch を編集
 
+#    daemon の寿命を既定から変える場合のみ（省略可。無ければ既定値で動く）
+cp ai-harness-main/ai-harness-main/config/daemon.yml <インストール先>/config/
+
 # 2. 一括インストール／更新（git・dotnet が PATH に必要）
 ai-harness-main --update
 ```
@@ -162,7 +165,7 @@ ai-harness-main --update
 - `lib/` へ入れただけでは発火しない。各プロジェクトの `common.yml` の `tools` で有効化する。
 
 - 設定 YAML（`common.yml`・各プラグイン YAML）はホットリロードされるため、`--restart` は不要。DLL を差し替えたときだけ `--restart`。
-- 何も操作しなくても、全プロジェクトが回収されメモリが空になるか、接続が 5 分途絶えれば daemon は自動終了する。
+- 何も操作しなくても、全プロジェクトが回収（無アクセス既定 30 分）されメモリが空になれば daemon は自動終了する。時間は `config/daemon.yml` で変えられる。
 
 ## 既知の制約
 
