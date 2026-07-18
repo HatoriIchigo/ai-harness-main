@@ -5,6 +5,8 @@ namespace ai_harness_main;
 /// <summary>
 /// <c>--update</c> の実体。本体直下 <c>config/plugins.yml</c> の定義に従い、拡張プラグインを
 /// <c>repos/</c>（実行体隣）へ clone／pull・build し、成果の管理 DLL を <c>lib/</c> へ配置する。
+/// HEAD が動いていない（fetch しても差分が無い）プラグインは baselib 側にも変更が無ければ
+/// build・配置をスキップする（clone／fetch は変更検知のため毎回行う）。
 ///
 /// 本体（<c>ai-harness-main</c> 自身）の更新は対象外。拡張プラグインのみを扱う。
 /// 前提コマンド（<c>git</c>／<c>dotnet</c>）が PATH に無ければ何もせず異常終了（非 0）。
@@ -68,11 +70,12 @@ internal static class PluginInstaller
             // 拡張プラグインは baselib を兄弟ディレクトリ相対参照（..\..\ai-harness-baselib\...）でビルド時参照する。
             // プラグインのビルド前に repos/ai-harness-baselib へ用意する。ここが無いと全プラグインのビルドが失敗する。
             // baselib は「本体（ai-harness-main）」ではなくプラグインのビルド依存。稼働中の本体バイナリは差し替えない。
+            bool baselibChanged;
             try
             {
                 Console.WriteLine($"==== baselib: {config.Baselib.Path} ({config.Baselib.Branch}) ====");
                 var baselibDir = Path.Combine(InstallPaths.ReposDir, BaselibDirName);
-                CloneOrUpdate(config.Baselib.Path, config.Baselib.Branch, baselibDir);
+                baselibChanged = CloneOrUpdate(config.Baselib.Path, config.Baselib.Branch, baselibDir);
             }
             catch (Exception ex)
             {
@@ -88,7 +91,7 @@ internal static class PluginInstaller
                 Console.WriteLine($"==== {entry.Path} ({entry.Branch}) ====");
                 try
                 {
-                    installed.Add(InstallOne(entry));
+                    installed.Add(InstallOne(entry, baselibChanged));
                 }
                 catch (Exception ex)
                 {
@@ -161,11 +164,12 @@ internal static class PluginInstaller
         }
 
         // 拡張プラグインは baselib を兄弟ディレクトリ相対参照でビルド時参照するため、ビルド前に用意する。
+        bool baselibChanged;
         try
         {
             Console.WriteLine($"==== baselib: {config.Baselib.Path} ({config.Baselib.Branch}) ====");
             var baselibDir = Path.Combine(InstallPaths.ReposDir, BaselibDirName);
-            CloneOrUpdate(config.Baselib.Path, config.Baselib.Branch, baselibDir);
+            baselibChanged = CloneOrUpdate(config.Baselib.Path, config.Baselib.Branch, baselibDir);
         }
         catch (Exception ex)
         {
@@ -177,7 +181,7 @@ internal static class PluginInstaller
         {
             Console.WriteLine();
             Console.WriteLine($"==== {entry.Path} ({entry.Branch}) ====");
-            InstallOne(entry);
+            InstallOne(entry, baselibChanged);
         }
         catch (Exception ex)
         {
@@ -202,19 +206,30 @@ internal static class PluginInstaller
     /// </summary>
     private const string BaselibDirName = "ai-harness-baselib";
 
-    /// <summary>1 プラグインを clone／pull・build・配置する。成功でリポジトリ名を返す。失敗は例外。</summary>
-    private static string InstallOne(PluginsConfig.PluginEntry entry)
+    /// <summary>
+    /// 1 プラグインを clone／pull・build・配置する。成功でリポジトリ名を返す。失敗は例外。
+    /// <paramref name="baselibChanged"/> が false かつプラグイン自体の HEAD も変わらず、
+    /// かつ配置済み DLL が既に存在するなら、build・配置は行わず据え置く（無駄な毎回ビルドを避ける）。
+    /// </summary>
+    private static string InstallOne(PluginsConfig.PluginEntry entry, bool baselibChanged)
     {
         var name = RepoName(entry.Path);
         var repoDir = Path.Combine(InstallPaths.ReposDir, name);
 
-        CloneOrUpdate(entry.Path, entry.Branch, repoDir);
+        var pluginChanged = CloneOrUpdate(entry.Path, entry.Branch, repoDir);
+
+        var deployedDll = Path.Combine(InstallPaths.LibDir, name + ".dll");
+        if (!pluginChanged && !baselibChanged && File.Exists(deployedDll))
+        {
+            Console.WriteLine("変更なし。build をスキップ。");
+            return name;
+        }
 
         // build（管理 DLL のみを専用出力先へ）。
         var csproj = FindCsproj(repoDir, name);
         var buildOut = Path.Combine(repoDir, ".harness-build");
         Console.WriteLine($"build: {csproj}");
-        RunOrThrow("dotnet", ["build", csproj, "-c", "Release", "-o", buildOut]);
+        RunBuildOrThrow("dotnet", ["build", csproj, "-c", "Release", "-o", buildOut]);
 
         // 成果 DLL を lib/ へ配置（baselib は host が共有ロードするため除外）。
         var copied = CopyPluginDlls(buildOut, InstallPaths.LibDir);
@@ -229,20 +244,39 @@ internal static class PluginInstaller
     /// <summary>
     /// <paramref name="repoDir"/> にリポジトリを用意する。既存（<c>.git</c> あり）なら
     /// <paramref name="branch"/> を fetch して <c>reset --hard FETCH_HEAD</c> で最新化、無ければ shallow clone。
+    /// 戻り値は HEAD が実際に動いたか（新規 clone は常に true）。呼び出し側の build スキップ判定に使う。
     /// </summary>
-    internal static void CloneOrUpdate(string url, string branch, string repoDir)
+    internal static bool CloneOrUpdate(string url, string branch, string repoDir)
     {
         if (Directory.Exists(Path.Combine(repoDir, ".git")))
         {
+            var before = GetHeadHash(repoDir);
             Console.WriteLine($"更新: {repoDir}");
             RunOrThrow("git", ["-C", repoDir, "fetch", "--depth", "1", "origin", branch]);
             RunOrThrow("git", ["-C", repoDir, "reset", "--hard", "FETCH_HEAD"]);
+            var after = GetHeadHash(repoDir);
+            return before != after;
         }
         else
         {
             Console.WriteLine($"clone: {url} -> {repoDir}");
             RunOrThrow("git", ["clone", "--depth", "1", "--branch", branch, url, repoDir]);
+            return true;
         }
+    }
+
+    /// <summary>リポジトリの現在の HEAD コミットハッシュ。build スキップ判定用の変更検知に使う。</summary>
+    private static string GetHeadHash(string repoDir)
+    {
+        var psi = new ProcessStartInfo("git") { UseShellExecute = false, RedirectStandardOutput = true };
+        psi.ArgumentList.Add("-C");
+        psi.ArgumentList.Add(repoDir);
+        psi.ArgumentList.Add("rev-parse");
+        psi.ArgumentList.Add("HEAD");
+        using var p = Process.Start(psi) ?? throw new InvalidOperationException("git rev-parse の起動に失敗");
+        var hash = p.StandardOutput.ReadToEnd().Trim();
+        p.WaitForExit();
+        return hash;
     }
 
     /// <summary>build 出力から baselib を除く *.dll を lib/ へ上書きコピーし、コピー数を返す。</summary>
@@ -331,6 +365,49 @@ internal static class PluginInstaller
         p.WaitForExit();
         if (p.ExitCode != 0)
         {
+            throw new InvalidOperationException(
+                $"{file} {string.Join(' ', args)} が終了コード {p.ExitCode} で失敗");
+        }
+    }
+
+    /// <summary>
+    /// <c>dotnet build</c> 専用の実行。標準出力／標準エラーをリダイレクトして受け取ることで、
+    /// dotnet CLI 側のターミナルロガー（対話端末検知時のみ有効になる、日本語ロケールで語順が
+    /// 崩れることがある要約表示）を無効化させ、成功時は生ログを出さず配置ログのみを見せる。
+    /// 失敗時のみ捕捉したログをそのまま出してから例外を投げる。
+    /// </summary>
+    private static void RunBuildOrThrow(string file, IReadOnlyList<string> args)
+    {
+        var psi = new ProcessStartInfo(file)
+        {
+            UseShellExecute = false,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+        };
+        foreach (var a in args)
+        {
+            psi.ArgumentList.Add(a);
+        }
+
+        using var p = Process.Start(psi)
+            ?? throw new InvalidOperationException($"プロセス起動に失敗: {file}");
+        // デッドロック回避のため WaitForExit の前に両ストリームの読み取りを開始する。
+        var stdoutTask = p.StandardOutput.ReadToEndAsync();
+        var stderrTask = p.StandardError.ReadToEndAsync();
+        p.WaitForExit();
+        var stdout = stdoutTask.Result;
+        var stderr = stderrTask.Result;
+
+        if (p.ExitCode != 0)
+        {
+            if (stdout.Length > 0)
+            {
+                Console.Error.WriteLine(stdout);
+            }
+            if (stderr.Length > 0)
+            {
+                Console.Error.WriteLine(stderr);
+            }
             throw new InvalidOperationException(
                 $"{file} {string.Join(' ', args)} が終了コード {p.ExitCode} で失敗");
         }
