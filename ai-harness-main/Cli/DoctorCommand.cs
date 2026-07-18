@@ -24,6 +24,13 @@ internal static class DoctorCommand
             await DoctorProbes.DaemonAsync().ConfigureAwait(false),
             DoctorProbes.ExternalTool("git"),
             DoctorProbes.ExternalTool("dotnet"),
+            // LSP 連携（common.yml の lsp:）が要求するランタイム。無くても本体・他の言語は動くため warn。
+            DoctorProbes.LspRuntime("node", "python(pyright)/typescript"),
+            DoctorProbes.LspRuntime("npm", "python(pyright)/typescript のインストール"),
+            DoctorProbes.LspRuntime(OperatingSystem.IsWindows() ? "python" : "python3", "python(pylsp/jedi)"),
+            DoctorProbes.LspRuntime("go", "go(gopls) のインストール"),
+            DoctorProbes.LspRuntime("java", "java(jdtls)"),
+            DoctorProbes.LspRuntime("dotnet", "csharp(csharp-ls) のインストール"),
         };
 
         var rows = checks.Select(c => new[] { c.Name, c.StatusText, c.Detail }).ToList();

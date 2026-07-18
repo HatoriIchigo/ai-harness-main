@@ -18,9 +18,12 @@ internal sealed class RequestEnvelope
     /// <summary>プラグインの能動スキャン起動（<c>--fire</c>）。応答は <see cref="FireResponse"/>。</summary>
     public const string TypeFire = "fire";
 
+    /// <summary>プロジェクトの LSP 稼働状況の照会（<c>--lsp &lt;プロジェクト&gt;</c>）。応答は <see cref="LspStatusResponse"/>。</summary>
+    public const string TypeLsp = "lsp";
+
     /// <summary>
     /// リクエスト種別。<see cref="TypeHook"/> / <see cref="TypeStop"/> / <see cref="TypeProjects"/> /
-    /// <see cref="TypeFire"/>。
+    /// <see cref="TypeFire"/> / <see cref="TypeLsp"/>。
     /// </summary>
     [JsonPropertyName("type")]
     public string Type { get; set; } = TypeHook;

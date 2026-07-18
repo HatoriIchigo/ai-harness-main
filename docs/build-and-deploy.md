@@ -113,7 +113,7 @@ native の入手経路は使用者が置くもの（host と `lib/` のプラグ
 
 2. **それ以外の native は既定リリースに一切含めない**（host にも `lib/` にも置かない）。使用者は `runtimes/` を触らない（追加不可）。ただし**プログラム（host）が `runtimes/` を書き換えるのは可**。
 
-3. **tree-sitter 以外で native が要るプラグインは、native を自分の管理 DLL に埋め込む（embedded resource）。** host が起動時に `runtimes/<rid>/native/` へ**自動展開**してから事前ロードする。使用者は従来どおり管理 DLL を `lib/` に置くだけで、`runtimes/` を触らない。native はプラグイン DLL に同梱されるため**完全オフライン**（ネットワーク・外部インストーラ不要）。native を `DllImport`／ベア名のどちらでロードしても、`runtimes/` の事前ロードと `PluginLoadContext` の直接プローブ（上記 1・2）で効く。
+3. **tree-sitter 以外で native が要るプラグインは、native を自分の管理 DLL に埋め込む（embedded resource）。** host が起動時に `runtimes/<rid>/native/` へ**自動展開**してから事前ロードする。使用者は従来どおり管理 DLL を `lib/` に置くだけで、`runtimes/` を触らない。native を `DllImport`／ベア名のどちらでロードしても、`runtimes/` の事前ロードと `PluginLoadContext` の直接プローブ（上記 1・2）で効く。
 
    - 自動展開は**グローバル単一の `runtimes/`・冪等（既に在れば何もしない）・起動時 1 回（型発見時）**。複数プロジェクト（マルチテナント）や複数プラグインが同じ native を要求しても、`runtimes/` には 1 つだけ・展開も 1 回だけ。初回展開の競合は `.tmp` → atomic rename で回避する。
    - この host 側の自動展開フックは、**最初の非 tree-sitter native プラグインが登場した時点で実装**する（tree-sitter は既定同梱なので現状は不要）。`PreloadNativeLibraries` による `runtimes/` 事前ロードの仕組みは共通で流用する。

@@ -36,6 +36,10 @@ namespace ai_harness_main;
 ///   --fire       … cwd のプロジェクトで有効プラグインの能動スキャン（Fire）を daemon 経由で一斉起動。
 ///   --fire &lt;プラグイン名&gt; … そのプラグインだけ Fire を起動。
 ///                  終了コードは 0=問題なし / 2=いずれかが検出 / 1=接続・実行不能（hook 規約とは別系統）。
+///   --lsp        … LSP の対応言語・候補サーバの一覧（daemon 不要）。
+///   --lsp &lt;プロジェクト&gt; … そのプロジェクトの common.yml の lsp: 宣言と、daemon 上の実際の稼働状況
+///                  （言語・サーバ・状態・エラー）。daemon 未起動／プロジェクト未展開でも「未起動」と表示するのみで、
+///                  この照会のために daemon やプロジェクトを新規に起こすことはない。
 ///
 ///   --logs には <c>--n &lt;件数&gt;</c>（新しい順に上位 N 件）・<c>--filter &lt;レベル,…&gt;</c>（レベル絞り込み）・
 ///   <c>--deny</c>（deny の監査レコードのみ）を付けられる。
@@ -112,6 +116,7 @@ public static class Program
             case "--logs":
             case "--plugin":
             case "--validate":
+            case "--lsp":
             {
                 if (!CliOptions.TryParse(args, out var options, out var error))
                 {
@@ -216,6 +221,10 @@ public static class Program
         {
             await Console.Error.WriteLineAsync($"{mode} は --n / --filter / --deny を取りません。").ConfigureAwait(false);
             return ExitUsage;
+        }
+        if (mode == "--lsp")
+        {
+            return await LspCommand.RunAsync(options.Project).ConfigureAwait(false);
         }
         return mode == "--validate" ? ValidateCommand.Run(options) : PluginsCommand.Run(options);
     }

@@ -155,6 +155,59 @@ internal static class DoctorProbes
         }
     }
 
+    /// <summary>
+    /// LSP サーバが要求するランタイム（<c>node</c>／<c>npm</c>／<c>python</c>／<c>go</c>／<c>java</c>／
+    /// <c>dotnet</c>）が使えるか。<paramref name="usedBy"/> は「これが無いと何が使えないか」の表示用
+    /// （例: "python: pyright/typescript"）。無くてもハーネス本体・他の言語は動くため warn。
+    ///
+    /// <see cref="ExternalTool"/> と別メソッドにしている理由: Windows では <c>npm</c> 等が <c>.cmd</c> 経由の
+    /// ことがあり、<c>UseShellExecute=false</c> の直接起動では解決できないことがある
+    /// （<see cref="LspManager"/> 実装時に実測で確認済みの問題）。<c>git</c>／<c>dotnet</c> は実体 exe なので
+    /// <see cref="ExternalTool"/> の直接起動のままで問題ないが、こちらは <c>cmd.exe /c</c> 経由に統一して
+    /// コマンドの実体を問わず解決できるようにする。
+    /// </summary>
+    public static DoctorCheck LspRuntime(string command, string usedBy)
+    {
+        try
+        {
+            ProcessStartInfo psi;
+            if (OperatingSystem.IsWindows())
+            {
+                psi = new ProcessStartInfo("cmd.exe") { UseShellExecute = false, CreateNoWindow = true };
+                psi.ArgumentList.Add("/c");
+                psi.ArgumentList.Add(command);
+            }
+            else
+            {
+                psi = new ProcessStartInfo(command) { UseShellExecute = false, CreateNoWindow = true };
+            }
+            psi.ArgumentList.Add("--version");
+            psi.RedirectStandardOutput = true;
+            psi.RedirectStandardError = true;
+
+            using var process = Process.Start(psi);
+            if (process is null)
+            {
+                return DoctorCheck.Warn(command, $"起動できない（{usedBy} が使えない）");
+            }
+
+            var output = process.StandardOutput.ReadToEnd();
+            if (!process.WaitForExit(ToolTimeout))
+            {
+                process.Kill(entireProcessTree: true);
+                return DoctorCheck.Warn(command, $"応答なし（{usedBy} が使えない）");
+            }
+            var first = output.Split('\n').FirstOrDefault()?.Trim() ?? "";
+            return process.ExitCode == 0
+                ? DoctorCheck.Ok(command, $"{first}（{usedBy}）")
+                : DoctorCheck.Warn(command, $"異常終了 exit={process.ExitCode}（{usedBy} が使えない）");
+        }
+        catch (Exception ex)
+        {
+            return DoctorCheck.Warn(command, $"PATH に見つからない（{usedBy} が使えない）: {ex.Message}");
+        }
+    }
+
     private static void AddProblem(List<string> problems, LogEntry entry)
     {
         if (entry.Level >= LogLevel.Error)

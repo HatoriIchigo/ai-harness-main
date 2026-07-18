@@ -40,6 +40,15 @@ internal static class InstallPaths
     public static string PluginsConfigPath => Path.Combine(ConfigDir, "plugins.yml");
 
     /// <summary>
+    /// LSP サーバの自動インストール先（実行体隣の <c>lsp/&lt;言語&gt;/</c>）。グローバル単一
+    /// （プロジェクトごとに分けない。同一言語は全プロジェクトで同じ展開物を共有する）。
+    /// </summary>
+    public static string LspDir => Path.Combine(AppContext.BaseDirectory, "lsp");
+
+    /// <summary>LSP ダウンロード元定義ファイル（<c>&lt;実行体&gt;/config/lsp.yml</c>）。不在なら起動時に既定値で自動作成する。</summary>
+    public static string LspConfigPath => Path.Combine(ConfigDir, "lsp.yml");
+
+    /// <summary>
     /// daemon 自身のライフサイクルログ出力先（実行体隣の <c>logs/</c>）。
     /// プロジェクト解決前のイベント（型発見・起動・回収・停止）を記録する。
     /// プロジェクト解決後の hook 処理ログは各プロジェクトの <see cref="ProjectConfig.LogDir"/> へ。

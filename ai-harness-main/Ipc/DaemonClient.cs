@@ -64,4 +64,30 @@ internal static class DaemonClient
             return null;
         }
     }
+
+    /// <summary>
+    /// プロジェクトの LSP 稼働状況を問い合わせる（<c>--lsp &lt;プロジェクト&gt;</c>）。daemon 未起動・通信失敗は
+    /// <c>null</c>。daemon がそのプロジェクトをメモリに展開していなければ（hook が一度も来ていない等）、
+    /// 空の <see cref="LspStatusResponse"/> が返る（daemon はこの照会のために新規生成しない）。
+    /// </summary>
+    public static async Task<LspStatusResponse?> TryQueryLspAsync(string projectRoot)
+    {
+        try
+        {
+            using var client = new NamedPipeClientStream(
+                ".", HarnessPipe.Name(), PipeDirection.InOut, PipeOptions.Asynchronous);
+            await client.ConnectAsync(ConnectTimeoutMs).ConfigureAwait(false);
+
+            var envelope = new RequestEnvelope { Type = RequestEnvelope.TypeLsp, ProjectRoot = projectRoot };
+            await Framing.WriteFrameAsync(client, JsonSerializer.SerializeToUtf8Bytes(envelope))
+                .ConfigureAwait(false);
+            var payload = await Framing.ReadFrameAsync(client).ConfigureAwait(false);
+
+            return JsonSerializer.Deserialize<LspStatusResponse>(payload);
+        }
+        catch
+        {
+            return null;
+        }
+    }
 }

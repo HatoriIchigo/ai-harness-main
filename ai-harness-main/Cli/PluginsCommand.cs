@@ -226,6 +226,7 @@ internal static class PluginsCommand
             MaxParallel = config.MaxParallel,
             MinLogLevel = config.MinLogLevel,
             ToolToggles = merged,
+            LspLanguages = config.LspLanguages,
         };
 
         // 検証はプロジェクトのログを汚さない（daemon の経路と違い、ここではログを捨てる）。

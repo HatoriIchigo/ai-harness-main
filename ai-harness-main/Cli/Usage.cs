@@ -33,6 +33,8 @@ internal static class Usage
           --project                 daemon がメモリに展開しているプロジェクト一覧
           --logs   [プロジェクト]   ログを新しい順に表示（無指定は実行体自身のログ）
           --plugin [プロジェクト]   プラグイン一覧（無指定）／有効状態（指定時）
+          --lsp    [プロジェクト]   LSP の対応言語・候補サーバ一覧（無指定）／
+                                    common.yml の lsp: 宣言と daemon 上の実際の稼働状況（指定時）
 
         プラグインの有効化:
           --plugin [プロジェクト] --enable  <名,…>  common.yml の tools で有効化する

@@ -1,3 +1,4 @@
+using System.Text.Json.Nodes;
 using ai_harness_baselib;
 
 namespace ai_harness_main;
@@ -82,6 +83,8 @@ internal sealed class ProjectContext : IDisposable
         logger.Write(LogLevel.Info,
             $"プロジェクト初期化 root={projectRoot} 有効プラグイン={validation.ValidTypes.Count} parallel={config.MaxParallel}");
         ctx.StartWatching();
+        // common.yml の lsp: に列挙された言語をバックグラウンドで起動（未起動の分のみ・hookはブロックしない）。
+        LspManager.EnsureStarted(projectRoot, config.LspLanguages, logger.Emit);
         return ctx;
     }
 
@@ -116,6 +119,17 @@ internal sealed class ProjectContext : IDisposable
 
         // state 全体を読み取り用に注入（発火時点のスナップショット。共有参照ゆえプラグインは書き換えない）。
         data.State = _stateStore.Current;
+        // LSP の状態・診断キャッシュも同様に注入（プラグインが「使えるか」「何が出ているか」を判断できるように）。
+        data.Lsp = LspManager.GetStatusSnapshot(ProjectRoot);
+        data.LspDiagnostics = LspManager.GetDiagnosticsSnapshot(ProjectRoot);
+
+        // 書き込み系ツールの PostToolUse では、書き込まれたファイルを対応する起動済み LSP へ同期する
+        // （非ブロック。診断はサーバから非同期に届くため、この hook 自体には反映されないことが多い）。
+        if (data.Event == HookEvent.PostToolUse && WriteToolNames.Contains(data.ToolName ?? "")
+            && ExtractFilePath(data) is { } changedFilePath)
+        {
+            LspManager.NotifyFileChanged(ProjectRoot, changedFilePath);
+        }
 
         // フェーズ制御コマンド（UserPromptSubmit の /harness-next-phase[-help]）は main が直接処理し、
         // プラグインは発火させない。結果は非ブロックの additionalContext で返す。
@@ -378,6 +392,9 @@ internal sealed class ProjectContext : IDisposable
 
                 logger.Write(LogLevel.Info,
                     $"設定リロード完了 有効プラグイン={validation.ValidTypes.Count} 起動エラー={validation.Errors.Count}");
+
+                // lsp: が編集で増えていた場合に備え、未起動の言語があればここでも起動を試みる（冪等）。
+                LspManager.EnsureStarted(ProjectRoot, config.LspLanguages, logger.Emit);
             }
             catch (Exception ex)
             {
@@ -402,5 +419,22 @@ internal sealed class ProjectContext : IDisposable
         }
         _watcher = null;
         _stateStore.Dispose();
+        LspManager.StopAll(ProjectRoot);
     }
+
+    /// <summary>LSP への同期対象とする書き込み系ツール名。</summary>
+    private static readonly HashSet<string> WriteToolNames =
+        new(StringComparer.Ordinal) { "Write", "Edit", "MultiEdit", "NotebookEdit" };
+
+    /// <summary>書き込まれたファイルパス。<c>tool_input.file_path</c> 優先、無ければ <c>notebook_path</c>、さらにトップレベル <c>file_path</c>。</summary>
+    private static string? ExtractFilePath(HookData data) =>
+        AsString(GetMember(data.ToolInput, "file_path"))
+        ?? AsString(GetMember(data.ToolInput, "notebook_path"))
+        ?? data.FilePath;
+
+    private static JsonNode? GetMember(JsonNode? node, string name) =>
+        node is JsonObject obj && obj.TryGetPropertyValue(name, out var v) ? v : null;
+
+    private static string? AsString(JsonNode? node) =>
+        node is JsonValue v && v.TryGetValue<string>(out var s) ? s : null;
 }

@@ -44,6 +44,17 @@ internal static class Daemon
             globalLog.Write(LogLevel.Warning, warning);
         }
 
+        var lspConfig = LspConfig.Load();
+        if (lspConfig.Created)
+        {
+            globalLog.Write(LogLevel.Info, $"lsp.yml が無かったので既定値で作成: {InstallPaths.LspConfigPath}");
+        }
+        foreach (var warning in lspConfig.Warnings)
+        {
+            globalLog.Write(LogLevel.Warning, warning);
+        }
+        LspManager.Initialize(lspConfig);
+
         FileStream lockFile;
         var lockPath = Path.Combine(InstallPaths.RunDir, "daemon.lock");
         try
@@ -173,7 +184,11 @@ internal static class Daemon
             {
                 await RespondAsync(server, 0, "stopping").ConfigureAwait(false);
                 globalLog.Write(LogLevel.Info, "stop 要求で daemon 終了。");
-                Environment.Exit(0);
+                // Environment.Exit だと RunAsync の finally（DisposeAllProjects）を素通りし、
+                // プロジェクトが保持するもの（LspManager が起動した LSP 子プロセス等）が孤児化する。
+                // スイーパの「全プロジェクト回収」と同じ経路（_shutdownCts）で正規の終了シーケンスに乗せる。
+                _shutdownCts.Cancel();
+                return;
             }
 
             if (env.Type == RequestEnvelope.TypeProjects)
@@ -181,6 +196,22 @@ internal static class Daemon
                 var projects = new ProjectsResponse { Roots = MaterializedProjectRoots() };
                 await Framing.WriteFrameAsync(
                     server, JsonSerializer.SerializeToUtf8Bytes(projects, ResponseJsonOptions)).ConfigureAwait(false);
+                return;
+            }
+
+            if (env.Type == RequestEnvelope.TypeLsp)
+            {
+                // プロジェクトを新規生成しない読み取り専用の照会（--project と同じ流儀）。
+                // LspManager の状態はプロジェクト未生成なら自然に空（キーが無い）。
+                var lsp = new LspStatusResponse
+                {
+                    Languages = string.IsNullOrEmpty(env.ProjectRoot)
+                        ? []
+                        : new Dictionary<string, LspLanguageState>(
+                            LspManager.GetStatusSnapshot(Path.GetFullPath(env.ProjectRoot))),
+                };
+                await Framing.WriteFrameAsync(
+                    server, JsonSerializer.SerializeToUtf8Bytes(lsp, ResponseJsonOptions)).ConfigureAwait(false);
                 return;
             }
 

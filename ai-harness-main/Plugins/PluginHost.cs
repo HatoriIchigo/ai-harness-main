@@ -174,6 +174,9 @@ internal sealed class PluginHost
         try
         {
             plugin.LoadConfig(_configDir);
+            // Action と違い Fire は同期バッチ処理なので、応答が届くまでブロックしてよい LSP 診断リクエスタを渡す
+            // （Action では設定しない。HookData.LspDiagnostics のキャッシュ読み取りのみを使う）。
+            plugin.FireLsp = new FireLspRequester(projectRoot);
             foreach (var entry in plugin.Fire(projectRoot, result))
             {
                 var stamped = entry with { Source = name };

@@ -36,6 +36,12 @@ internal sealed class ProjectConfig
     public required IReadOnlyDictionary<string, bool> ToolToggles { get; init; }
 
     /// <summary>
+    /// <c>common.yml</c> の <c>lsp:</c> に列挙された言語。<see cref="LspManager"/> がこの一覧だけを起動対象にする
+    /// （ファイル拡張子等からの自動判定はしない）。未記載は空＝起動なし。
+    /// </summary>
+    public required IReadOnlyList<string> LspLanguages { get; init; }
+
+    /// <summary>
     /// <c>common.yml</c> が<b>存在するのに解析に失敗</b>したときのエラー内容（それ以外は <c>null</c>）。
     /// 設定ファイルが無いプロジェクト（ハーネス未使用）は <c>null</c> のまま＝対象外。
     /// フェイルクローズ方針では「在るのに壊れている＝何を強制すべきか判断できない」ため、host はこの
@@ -64,6 +70,7 @@ internal sealed class ProjectConfig
         var maxParallel = Environment.ProcessorCount;
         // 既定は空＝全プラグイン無効（「書いていないときは off」）。
         var toolToggles = new Dictionary<string, bool>(StringComparer.Ordinal);
+        var lspLanguages = new List<string>();
 
         var configPath = Path.Combine(configDir, ConfigFileName);
         if (File.Exists(configPath))
@@ -101,6 +108,11 @@ internal sealed class ProjectConfig
                             }
                         }
                     }
+
+                    if (model.Lsp is { } lsp)
+                    {
+                        lspLanguages.AddRange(lsp.Where(l => !string.IsNullOrWhiteSpace(l)).Distinct(StringComparer.Ordinal));
+                    }
                 }
             }
             catch (Exception ex)
@@ -119,6 +131,7 @@ internal sealed class ProjectConfig
             MaxParallel = maxParallel,
             MinLogLevel = minLogLevel,
             ToolToggles = toolToggles,
+            LspLanguages = lspLanguages,
             LoadError = configWarning, // 非 null＝common.yml が在るのに壊れている（フェイルクローズ対象）
         };
     }
@@ -131,5 +144,8 @@ internal sealed class ProjectConfig
 
         /// <summary>各要素は <c>{ PluginName: true/false }</c> の単一エントリマップ。</summary>
         public List<Dictionary<string, bool>>? Tools { get; set; }
+
+        /// <summary>起動する LSP の対象言語一覧（<see cref="LspCatalog"/> のキーと対応）。</summary>
+        public List<string>? Lsp { get; set; }
     }
 }
