@@ -23,6 +23,11 @@ namespace ai_harness_main;
 ///                  インストール先の実行体を安全に置換する。
 ///   --health     … 起動検証用。ランタイムが正常起動できれば 0 を返す（自己更新のロールバック判定に使う）。
 ///
+///   --init [プロジェクト] … 新規／既存プロジェクトへの配線を自動化する。.claude/settings.json に
+///                  ai-harness-main の PreToolUse／PostToolUse hook を追記し（配線済みなら変更なし）、
+///                  有効化するプラグインを選ばせ（<c>--enable 名,…</c> があればそれを使う）、
+///                  common.yml の tools へ書き込む（プロジェクト無指定は cwd から解決）。
+///
 /// 情報表示（人間向け。ハーネスの動作には影響しない）:
 ///
 ///   --project    … 稼働中の daemon がメモリに展開しているプロジェクト一覧。
@@ -111,6 +116,7 @@ public static class Program
                 Console.WriteLine("ai-harness-main OK");
                 return ExitAllow;
 
+            case "--init":
             case "--doctor":
             case "--project":
             case "--logs":
@@ -205,8 +211,8 @@ public static class Program
                 : await ProjectsCommand.RunAsync().ConfigureAwait(false);
         }
 
-        // 設定の書き換えは --plugin の責務。他のモードでは受け付けない。
-        if (mode != "--plugin" && options.Toggles.Count > 0)
+        // 設定の書き換えは --plugin／--init の責務。他のモードでは受け付けない。
+        if (mode is not ("--plugin" or "--init") && options.Toggles.Count > 0)
         {
             await Console.Error.WriteLineAsync($"{mode} は --enable / --disable を取りません。").ConfigureAwait(false);
             return ExitUsage;
@@ -225,6 +231,10 @@ public static class Program
         if (mode == "--lsp")
         {
             return await LspCommand.RunAsync(options.Project).ConfigureAwait(false);
+        }
+        if (mode == "--init")
+        {
+            return await InitCommand.RunAsync(options).ConfigureAwait(false);
         }
         return mode == "--validate" ? ValidateCommand.Run(options) : PluginsCommand.Run(options);
     }
@@ -301,6 +311,12 @@ public static class Program
         }
     }
 
+    /// <summary>
+    /// stdin 読み取りの上限（<see cref="Bridge.RunAsync"/> と同じ理由）。stdin がリダイレクト扱いなのに
+    /// データも EOF も来ない環境で無期限ブロックしないための保険。
+    /// </summary>
+    private const int StdinReadTimeoutMs = 2000;
+
     /// <summary>daemon を介さず stdin を直接 1 件処理する（テスト・フォールバック用）。</summary>
     private static async Task<int> RunStandaloneAsync()
     {
@@ -311,11 +327,21 @@ public static class Program
         try
         {
             await using var stdin = Console.OpenStandardInput();
-            data = await HookData.ParseAsync(stdin).ConfigureAwait(false);
+            // CancellationToken だけに頼らない（Bridge.RunAsync と同じ理由。環境によっては内部の
+            // 同期読み取りがブロックしたままトークンを無視することがある）。Task.WhenAny で
+            // タイムアウトと競走させ、負けたら解析タスクの完了を待たずにフェイルクローズへ抜ける。
+            using var cts = new CancellationTokenSource(StdinReadTimeoutMs);
+            var parseTask = HookData.ParseAsync(stdin, cts.Token);
+            var winner = await Task.WhenAny(parseTask, Task.Delay(StdinReadTimeoutMs)).ConfigureAwait(false);
+            if (winner != parseTask)
+            {
+                throw new TimeoutException("stdin からの入力が一定時間内に届きませんでした。");
+            }
+            data = await parseTask.ConfigureAwait(false);
         }
         catch (Exception ex)
         {
-            // フェイルクローズ: 解釈できない入力は通さない（daemon 経路と揃える）。
+            // フェイルクローズ: 解釈できない入力（タイムアウトも含む）は通さない（daemon 経路と揃える）。
             await Console.Error.WriteLineAsync(
                 $"hook データの解析に失敗（フェイルクローズ）: {ex.Message}").ConfigureAwait(false);
             return ExitDeny;

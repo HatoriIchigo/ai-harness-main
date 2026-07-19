@@ -80,16 +80,17 @@ ln -sf <インストール先>/ai-harness-main /usr/local/bin/ai-harness-main
 mkdir -p <インストール先>/lib
 cp <plugin>.dll <インストール先>/lib/
 
-# 4. プロジェクト側にプラグインの設定 YAML を置き、そのプロジェクトで有効化する
-#    （common.yml は --enable が既定テンプレートから自動生成する）
-mkdir -p <プロジェクト>/.claude/harness/config
-cp <plugin>.yml <プロジェクト>/.claude/harness/config/
-ai-harness-main --plugin <プロジェクト> --enable <PluginName>
+# 4. プロジェクト側を配線する（settings.json の hook 追記＋プラグイン選択＋common.yml）
+ai-harness-main --init <プロジェクト>
+# 選ぶプラグインが決まっているならプロンプトを飛ばせる:
+#   ai-harness-main --init <プロジェクト> --enable <PluginName>
 ```
 
 ## 各プロジェクト側のClaude Codeの設定
 
-Claude Code の `settings.json` では hook コマンドに **`ai-harness-main`** を指定する（PATH 解決・環境変数不要）。
+`ai-harness-main --init` が `.claude/settings.json` に hook を自動で追記する（既存の設定は保持）。
+手で書く場合、Claude Code の `settings.json` では hook コマンドに **`ai-harness-main`** を指定する
+（PATH 解決・環境変数不要）。
 
 ```json
 {
@@ -113,6 +114,7 @@ Claude Code の `settings.json` では hook コマンドに **`ai-harness-main`*
 | 起動 | 役割 |
 |---|---|
 | （引数なし） | bridge。hook ごとに Claude Code が叩く受け口。stdin を daemon へ中継。未起動なら daemon を起動。stdin が端末・空なら使い方を出して 1 |
+| `--init [プロジェクト] [--enable 名,…]` | プロジェクトへの配線を自動化。`settings.json` に hook を追記し、プラグインを選ばせて `common.yml` へ有効化する |
 | `--daemon` / `--ensure` / `--restart` / `--stop` | daemon の制御。`--restart` は `lib` のプラグイン DLL 差し替え反映用 |
 | `--standalone` | daemon を介さず stdin を 1 件処理して終了（テスト・フォールバック） |
 | `--update` | `config/plugins.yml` に従いプラグインを `lib/` へ配置し、本体自身も置換（自己更新） |

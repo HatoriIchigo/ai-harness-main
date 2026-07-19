@@ -15,7 +15,12 @@ namespace ai_harness_main;
 /// hook 入力のガード（hook 経由の起動でなければ、中継せず使い方エラー＝exit 1 で即終了する）:
 ///   stdin が端末      … 人間が引数なしで直接叩いた形。読むと EOF が来ず入力待ちで固まるため、読まずに終了。
 ///   stdin が空        … hook JSON が渡ってきていない（<c>&lt; /dev/null</c> 等）。中継しても解析できない。
-/// hook として呼ばれた場合は必ずリダイレクトされた stdin に JSON が載るため、この 2 つは hook 経路では起きない。
+///   stdin がリダイレクトされているが読み切れない … サンドボックス経由の実行等、<see cref="Console.IsInputRedirected"/>
+///     は <c>true</c> なのに相手側が EOF もデータも寄越さない環境がある（Claude Code の hook 経路では
+///     必ず即座に書き切って閉じるため、正規の hook 呼び出しでは起きない）。読み取りに
+///     <see cref="StdinReadTimeoutMs"/> の上限を設け、超えたら「叩き方の誤り」として同じ使い方エラーへ倒す
+///     （タイムアウトが無いと無期限にブロックし、誤って直接実行した Claude 自身のプロセスごと固まる）。
+/// hook として呼ばれた場合は必ずリダイレクトされた stdin に JSON が即座に載るため、この 3 つは hook 経路では起きない。
 /// deny（2）ではなく 1 で終えるのは、ツールをブロックする判断ではなく<b>叩き方の誤り</b>だから
 /// （Claude hook 規約でも 1 は非ブロッキングエラー）。
 ///
@@ -29,6 +34,12 @@ internal static class Bridge
     private const int ConnectTimeoutMs = 1500;
     private const int RetryCount = 15;
     private const int RetryDelayMs = 200;
+
+    /// <summary>
+    /// stdin の読み取りに許す上限。正規の hook 呼び出しは即座に書き切って閉じるため、この値は
+    /// 「本物の hook 入力を待つ余裕」ではなく「入力が来ない誤った起動を無期限ブロックさせないための保険」。
+    /// </summary>
+    private const int StdinReadTimeoutMs = 2000;
 
     /// <summary>hook 経由の起動ではない（叩き方の誤り）。ブロック判断ではないので deny(2) とは別。</summary>
     private const int ExitUsage = 1;
@@ -46,7 +57,20 @@ internal static class Bridge
         byte[] stdin;
         using (var ms = new MemoryStream())
         {
-            await Console.OpenStandardInput().CopyToAsync(ms).ConfigureAwait(false);
+            // CancellationToken だけに頼らない: 環境によっては Console 標準入力の読み取りが
+            // トークンを実質無視する（内部の同期読み取りがブロックしたまま戻らない）ことがあるため、
+            // Task.WhenAny でタイムアウトと競走させる。タイムアウト側が勝ったら読み取りタスクの完了を
+            // 待たずに使い方エラーへ抜ける（このプロセスはすぐ終了するので、放置されたタスクごと
+            // プロセス終了時に破棄される＝リークの心配はない）。
+            var readTask = Console.OpenStandardInput().CopyToAsync(ms);
+            var winner = await Task.WhenAny(readTask, Task.Delay(StdinReadTimeoutMs)).ConfigureAwait(false);
+            if (winner != readTask)
+            {
+                return await UsageErrorAsync(
+                    "hook データが渡されていません（stdin からの入力が一定時間内に届きませんでした）。")
+                    .ConfigureAwait(false);
+            }
+            await readTask.ConfigureAwait(false); // 例外があればここで観測する。
             stdin = ms.ToArray();
         }
 

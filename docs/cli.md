@@ -18,6 +18,7 @@ ai-harness-main [モード] [オプション]
 | モード | 役割 | 終了コード |
 |---|---|---|
 | （引数なし） | **bridge**。hook の受け口。stdin の hook JSON を daemon へ中継する。未起動なら daemon を起動 | 0=許可 / 2=deny / 1=hook 入力なし |
+| [`--init`](#--init-プロジェクト---enable-名) | プロジェクトへの配線を自動化する（settings.json の hook 追記＋プラグイン選択＋common.yml） | 0 / 1=拒否・引数エラー |
 | [`--daemon`](#--daemon) | 常駐サーバー。パイプで待ち受け、プロジェクト別に処理する | 0 |
 | [`--ensure`](#--ensure--restart--stop) | 未起動なら detached 起動する | 0 |
 | [`--restart`](#--ensure--restart--stop) | 停止→起動（`lib/` の DLL 差し替え反映） | 0 |
@@ -47,6 +48,33 @@ ai-harness-main [モード] [オプション]
 | **hook 規約** | 引数なし（bridge）・`--standalone` | `0`=許可 / `2`=deny。内部エラー・不正入力・検証不能は**フェイルクローズで 2** に倒す。例外は bridge が daemon にまったく接続できないときだけで、全ツールのロックアウトを避けるため `0`（許可）で継続する。bridge が hook 入力そのものを受け取っていない（stdin が端末・空）ときは、ツールの許可／deny の判断ではなく叩き方の誤りなので hook 規約の外として `1` |
 | **コマンド規約** | `--validate`・`--doctor`・情報表示系 | `0`=成功 / `1`=失敗・引数エラー |
 | **スキャン規約** | `--fire` | `0`=問題なし / `2`=いずれかのプラグインが検出 / `1`=接続・実行不能。`2` は「差し戻し」ではなくスキャン結果の集約 |
+
+## 初期化
+
+### `--init [プロジェクト] [--enable <名,…>]`
+
+プロジェクトへのハーネス配線を自動化する。プロジェクト無指定は cwd から解決する
+（`.claude` が見つからなければ cwd 自体を配線先にする＝新規プロジェクトの初期化）。
+
+1. `.claude/settings.json` に `ai-harness-main` を呼ぶ `PreToolUse`／`PostToolUse` hook を追記する。
+   既存の設定（他ツールの hook・`permissions` 等）は保持し、追記のみ行う。いずれかのイベントに既に
+   `ai-harness-main` を呼ぶ hook があれば、そのイベントには触れない（配線済み）。
+2. `lib/` にインストール済みのプラグインを一覧にし、有効化するものを対話的に選ばせる
+   （↑/↓ か j/k（vim 風）で移動、space でチェック切替、Enter で確定、Esc／q で中止＝選択なし）。標準入出力が
+   リダイレクトされている（パイプ・CI 等、矢印キー入力を受けられない）場合は、カンマ区切りの番号
+   入力（`all` で全選択、空欄で選択なし）にフォールバックする。`--enable <名,…>` を渡すと
+   プロンプト自体を飛ばし、その一覧をそのまま有効化する（`--disable` は受け付けない）。
+3. 選んだプラグインを `--plugin --enable` と同じ経路（デフォルト設定 YAML の配置・フェイルクローズ検証・
+   `common.yml` の `tools` への書き込み）で有効化する。有効化がフェイルクローズを招く場合は、
+   `common.yml` を書き換えずに拒否する（`--plugin --enable` と同じ安全策）。
+
+選ぶプラグインが 0 件なら `common.yml` には触れない。
+
+```sh
+ai-harness-main --init                                              # cwd、対話選択
+ai-harness-main --init C:\Users\project1                            # プロジェクト指定、対話選択
+ai-harness-main --init --enable ai-harness-deny,ai-harness-git-commit  # 選択済み一覧を渡す
+```
 
 ## daemon 制御
 

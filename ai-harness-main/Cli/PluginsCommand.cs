@@ -15,6 +15,10 @@ namespace ai_harness_main;
 ///
 /// daemon には問い合わせない（<c>lib/</c> と <c>common.yml</c> はディスクが真実源であり、
 /// 照会・更新のために daemon を起こしたくないため）。
+///
+/// <see cref="Discover"/>／<see cref="EnsureDefaultConfigs"/>／<see cref="CanEnable"/> は
+/// <see cref="InitCommand"/>（<c>--init</c>）とも共有する（プラグイン発見・デフォルト設定配置・
+/// フェイルクローズ検証を二重実装しないため）。
 /// </summary>
 internal static class PluginsCommand
 {
@@ -155,7 +159,7 @@ internal static class PluginsCommand
     /// せず・フェイルクローズもしない安全既定」の雛形を置き、そのまま有効化を通せるようにする。無効化のみの
     /// 操作では何もしない。
     /// </summary>
-    private static void EnsureDefaultConfigs(
+    internal static void EnsureDefaultConfigs(
         IReadOnlyList<(string Name, bool Enable)> toggles, string configDir, PluginRegistry registry)
     {
         var enabling = toggles.Where(t => t.Enable).Select(t => t.Name).ToHashSet(StringComparer.Ordinal);
@@ -200,7 +204,7 @@ internal static class PluginsCommand
     /// 確かめる。適用前から在る別プラグインのエラーは今回の操作で作ったものではないため拒否理由にしない
     /// （それは <c>--validate</c> の領分）。無効化のみの操作は状態を悪化させないので検証しない。
     /// </summary>
-    private static bool CanEnable(
+    internal static bool CanEnable(
         IReadOnlyList<(string Name, bool Enable)> toggles,
         ProjectConfig config,
         PluginRegistry registry,
@@ -263,7 +267,7 @@ internal static class PluginsCommand
     }
 
     /// <summary>lib から発見した 1 プラグインの表示情報。</summary>
-    private readonly record struct PluginInfo(string Name, string Description);
+    internal readonly record struct PluginInfo(string Name, string Description);
 
     /// <summary><c>tools</c> に <c>true</c> で書かれたもののみ有効（未記載・false は無効）。</summary>
     private static bool IsEnabled(ProjectConfig config, string pluginName) =>
@@ -273,7 +277,7 @@ internal static class PluginsCommand
     /// <c>lib/</c> の DLL からプラグインを発見する（PluginName の辞書順）。
     /// 有効化の事前検証（<see cref="CanEnable"/>）でも同じ型一覧を使うため <see cref="PluginRegistry"/> ごと返す。
     /// </summary>
-    private static (PluginRegistry Registry, IReadOnlyList<PluginInfo> Plugins) Discover()
+    internal static (PluginRegistry Registry, IReadOnlyList<PluginInfo> Plugins) Discover()
     {
         var registry = new PluginRegistry(WriteProblem, InstallPaths.LibDir);
 

@@ -24,6 +24,11 @@ internal static class Usage
           --update <プラグイン名>   指定した 1 プラグインのみ更新する（本体自己更新はしない）
           --health                  起動検証（ランタイムが正常起動すれば 0）
 
+        初期化:
+          --init [プロジェクト] [--enable <名,…>]
+                                    settings.json に hook を配線し、プラグインを選ばせて（--enable が
+                                    あればそれを使う）common.yml へ有効化する（無指定は cwd から解決）
+
         検証:
           --validate [プロジェクト] 設定で hook が通る状態か確かめる（無指定は cwd から解決）。
                                     0=成功 / 1=失敗。daemon に触れずログも書かない
