@@ -140,6 +140,41 @@ public override IEnumerable<LogEntry> Fire(string projectRoot, PluginResult resu
 - **hook のゲートではない**。ここでの `ExitCode != 0` は何かをブロックするのではなく、スキャンの検出結果としてレポート（`--fire` の出力）に表示されるだけ。`Reason`／`AdditionalContext`／yield したログがそのまま並ぶ。
 - ログ・結果の書き方は `Action` と同じ（列挙完了時に `result` 確定）。
 
+## 他プラグインとの整合検証（`RequiredPaths` / `ValidatePeers`・任意）
+
+プラグインは互いを知らないが、設定同士が両立しないことがある。典型例は「一方が定数ファイルの置き場所を要求し、他方がその配置を許可していない」状態で、そこにファイルを作った瞬間に必ず deny される。これを**書き込み時ではなく起動時に露見させる**ための一方向チャネル。
+
+要求する側は自分の設定から配置を宣言する。
+
+```csharp
+// 自分の Config からのみ導出する（他プラグインの宣言を参照すると循環する）。
+public override IReadOnlyList<string> RequiredPaths =>
+    ParseMyConfig(Config).Select(e => e.Allow).ToList();
+```
+
+検証する側は宣言を受け取り、自分の設定で覆えているかを検査する。
+
+```csharp
+public override IEnumerable<string> ValidatePeers(IReadOnlyList<PathDeclaration> declarations)
+{
+    foreach (var declaration in declarations)
+    {
+        if (!IsCovered(declaration.Pattern))
+        {
+            // declaration.Source は宣言元の PluginName。
+            yield return $"{declaration.Source} が要求する配置 '{declaration.Pattern}' を許可していません。…";
+        }
+    }
+}
+```
+
+- host は起動検証を 2 パスで行う。パス 1 で全プラグインの `LoadConfig`／`Init` を済ませ、パス 2 で `RequiredPaths` を集めて `ValidatePeers` へ渡す。**宣言が出揃うのは全プラグインの設定ロード後**のため、`Init` の中では検証できない。
+- **要求は他プラグインの許可を広げない。** 検証材料にしか使わない。要求を根拠に検査を緩めると、プラグインを 1 つ有効化しただけで別のガードが黙って緩む。
+- `ValidatePeers` が返した文字列は起動エラーとして積まれ、そのプロジェクトの hook は**フェイルクローズで全てブロック**される。警告に留めたい内容を返してはならない。修正方法を含む文面にすること。
+- 要求元が無効・未導入なら宣言は 0 件＝検証は行われず、各プラグインは自分の設定のみで動作する（欠如側へ静かに縮退する）。検証側が無効なら要求は誰にも読まれず無害。
+- 雛形（`CopyDefaultConfig` が置くプレースホルダ）のままの値は `RequiredPaths` に含めないこと。設定が済んでいないだけの状態で他プラグインの起動エラーを誘発する。
+- `ai-harness-main --validate` が同じ経路を通るため、hook を待たずに矛盾を確認できる。
+
 ## ログの返し方
 
 `Init`／`Action` は `IEnumerable<LogEntry>` を `yield` で逐次返す。`source` は設定不要（main が `PluginName` を打刻）。

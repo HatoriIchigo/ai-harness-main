@@ -217,7 +217,8 @@ internal sealed class ProjectContext : IDisposable
         string? copyRulesTo = null)
     {
         var toolToggles = config.ToolToggles;
-        var valid = new List<Type>();
+        // パス 2（相互検証）で設定ロード済みインスタンスを再利用するため、型と一緒に保持する。
+        var valid = new List<(Type Type, PluginBase Plugin)>();
         var errors = new List<string>();
         var discoveredNames = new HashSet<string>(StringComparer.Ordinal);
 
@@ -311,7 +312,7 @@ internal sealed class ProjectContext : IDisposable
                 }
             }
 
-            valid.Add(type);
+            valid.Add((type, plugin));
         }
 
         // tools で有効化されたが lib に見つからない PluginName。そのガードは存在しないためブロックする。
@@ -325,7 +326,73 @@ internal sealed class ProjectContext : IDisposable
             errors.AddRange(missing.Select(m => $"{m}: tools で有効化されているが lib に存在しない"));
         }
 
-        return new StartupValidation(valid, errors);
+        errors.AddRange(ValidatePeers(valid, log));
+
+        return new StartupValidation(valid.Select(v => v.Type).ToList(), errors);
+    }
+
+    /// <summary>
+    /// 起動検証のパス 2。有効プラグインの <see cref="PluginBase.RequiredPaths"/> を集めてから、
+    /// 各プラグインの <see cref="PluginBase.ValidatePeers"/> へ渡し、設定同士の矛盾を検出する。
+    ///
+    /// パス 1（型ごとの検証・<see cref="PluginBase.LoadConfig"/>・<see cref="PluginBase.Init"/>）と分けるのは、
+    /// 宣言が出揃うのが全プラグインの設定ロード後だから。パス 1 の中で検証すると処理順に依存する。
+    ///
+    /// 矛盾したプラグインを発火対象から除外はしない。除外するとそのガードが消えるため、
+    /// エラーとして積み<b>フェイルクローズ</b>させる（両立しない設定のまま作業を続けさせない）。
+    /// </summary>
+    private static IReadOnlyList<string> ValidatePeers(
+        IReadOnlyList<(Type Type, PluginBase Plugin)> valid, Action<LogEntry> log)
+    {
+        var errors = new List<string>();
+        var declarations = new List<PathDeclaration>();
+
+        foreach (var (_, plugin) in valid)
+        {
+            var name = plugin.PluginName;
+            try
+            {
+                foreach (var pattern in plugin.RequiredPaths)
+                {
+                    if (!string.IsNullOrWhiteSpace(pattern))
+                    {
+                        declarations.Add(new PathDeclaration(name, pattern.Trim()));
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                // 要求を取り出せない＝他プラグインとの整合を検証できない。安全側（ブロック）へ倒す。
+                log(LogEntry.Error($"配置要求の取得に失敗（フェイルクローズ）: {ex.Message}") with { Source = name });
+                errors.Add($"{name}: 配置要求（RequiredPaths）の取得に失敗（{ex.Message}）");
+            }
+        }
+
+        if (declarations.Count > 0)
+        {
+            log(LogEntry.Debug(
+                "配置要求: " + string.Join(", ", declarations.Select(d => $"{d.Pattern} ({d.Source})"))));
+        }
+
+        foreach (var (_, plugin) in valid)
+        {
+            var name = plugin.PluginName;
+            try
+            {
+                foreach (var error in plugin.ValidatePeers(declarations))
+                {
+                    log(LogEntry.Error($"設定の矛盾（フェイルクローズ）: {error}") with { Source = name });
+                    errors.Add($"{name}: {error}");
+                }
+            }
+            catch (Exception ex)
+            {
+                log(LogEntry.Error($"相互検証に失敗（フェイルクローズ）: {ex.Message}") with { Source = name });
+                errors.Add($"{name}: 相互検証（ValidatePeers）に失敗（{ex.Message}）");
+            }
+        }
+
+        return errors;
     }
 
     // ---- ホットリロード ----
