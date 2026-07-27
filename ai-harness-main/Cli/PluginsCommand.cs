@@ -41,10 +41,11 @@ internal static class PluginsCommand
                 {
                     (i + 1).ToString(),
                     p.Name,
+                    p.Version,
                     string.IsNullOrWhiteSpace(p.Description) ? NoDescription : p.Description,
                 })
                 .ToList();
-            TextTable.Write(Console.Out, ["#", "name", "description"], rows, firstColumnRight: true);
+            TextTable.Write(Console.Out, ["#", "name", "version", "description"], rows, firstColumnRight: true);
             return 0;
         }
 
@@ -267,7 +268,7 @@ internal static class PluginsCommand
     }
 
     /// <summary>lib から発見した 1 プラグインの表示情報。</summary>
-    internal readonly record struct PluginInfo(string Name, string Description);
+    internal readonly record struct PluginInfo(string Name, string Version, string Description);
 
     /// <summary><c>tools</c> に <c>true</c> で書かれたもののみ有効（未記載・false は無効）。</summary>
     private static bool IsEnabled(ProjectConfig config, string pluginName) =>
@@ -287,7 +288,7 @@ internal static class PluginsCommand
             try
             {
                 var plugin = (PluginBase)Activator.CreateInstance(type)!;
-                plugins.Add(new PluginInfo(plugin.PluginName, plugin.Description));
+                plugins.Add(new PluginInfo(plugin.PluginName, plugin.Version, plugin.Description));
             }
             catch (Exception ex)
             {

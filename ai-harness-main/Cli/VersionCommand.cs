@@ -1,5 +1,6 @@
 using System.Reflection;
 using System.Runtime.InteropServices;
+using ai_harness_baselib;
 
 namespace ai_harness_main;
 
@@ -20,32 +21,10 @@ internal static class VersionCommand
         return 0;
     }
 
-    /// <summary>コミット sha は先頭からこの長さだけ見せる。</summary>
-    private const int ShaLength = 7;
-
-    /// <summary>表示用の版。属性が無ければアセンブリの数値版へ倒す。<c>--doctor</c> も使う。</summary>
-    public static string Version()
-    {
-        var assembly = Assembly.GetExecutingAssembly();
-        var informational = assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>();
-        if (informational is { InformationalVersion.Length: > 0 })
-        {
-            return ShortenSha(informational.InformationalVersion);
-        }
-        return assembly.GetName().Version?.ToString() ?? "(unknown)";
-    }
-
     /// <summary>
-    /// <c>0.0.3α+&lt;sha&gt;</c> の sha を短縮する。SDK は git リポジトリからビルドすると
-    /// 40 桁のフル sha を埋めるため、そのままでは読みにくい。
+    /// 表示用の版。読み出し規則は <see cref="PluginBase.Version"/>（各プラグイン DLL）と同一で、
+    /// 実装は baselib に置く（本体とプラグインで版の見え方を揃えるため）。<c>--doctor</c> も使う。
     /// </summary>
-    private static string ShortenSha(string version)
-    {
-        var plus = version.IndexOf('+', StringComparison.Ordinal);
-        if (plus < 0 || version.Length - plus - 1 <= ShaLength)
-        {
-            return version;
-        }
-        return version[..(plus + 1 + ShaLength)];
-    }
+    public static string Version() =>
+        AssemblyVersionReader.Read(Assembly.GetExecutingAssembly());
 }
