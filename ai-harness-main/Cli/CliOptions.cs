@@ -8,6 +8,7 @@ namespace ai_harness_main;
 /// <code>
 ///   --logs   [プロジェクトルート] [--n 件数] [--filter warn,debug] [--deny]
 ///   --plugin [プロジェクトルート] [--enable 名,…] [--disable 名,…]
+///   --init   [プロジェクトルート] [--enable 名,…] [--no-plugins]
 ///   --project
 /// </code>
 ///
@@ -35,6 +36,11 @@ internal sealed class CliOptions
     public IReadOnlyList<(string Name, bool Enable)> Toggles { get; private init; } = [];
 
     /// <summary>
+    /// <c>--init</c> のプラグイン選択を丸ごと飛ばす（<c>--no-plugins</c>）。settings.json への配線のみ行う。
+    /// </summary>
+    public bool NoPlugins { get; private init; }
+
+    /// <summary>
     /// <paramref name="args"/> の 1 番目以降（0 番目はモード名）を解釈する。
     /// 失敗時は <paramref name="error"/> に利用者向けの理由を入れて <c>false</c>。
     /// </summary>
@@ -44,6 +50,7 @@ internal sealed class CliOptions
         int? take = null;
         HashSet<LogLevel>? levels = null;
         var denyOnly = false;
+        var noPlugins = false;
         var toggles = new List<(string Name, bool Enable)>();
         error = "";
         options = new CliOptions();
@@ -65,6 +72,10 @@ internal sealed class CliOptions
 
                 case "--deny":
                     denyOnly = true;
+                    break;
+
+                case "--no-plugins":
+                    noPlugins = true;
                     break;
 
                 case "--enable":
@@ -136,6 +147,7 @@ internal sealed class CliOptions
             Take = take,
             Levels = levels,
             DenyOnly = denyOnly,
+            NoPlugins = noPlugins,
             Toggles = toggles,
         };
         return true;

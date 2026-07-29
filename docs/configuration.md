@@ -30,6 +30,10 @@
 `ai-harness-main --update` がこの定義に従い、各リポジトリを `<実行体>/repos/` へ clone／pull・build し、
 成果の管理 DLL を `<実行体>/lib/` へ配置する。本体（`ai-harness-main` 自身）は更新対象外。
 
+`ai-harness-main --plugin install <リポジトリ URL> [-b <ブランチ>]` は、この `plugins` へ 1 エントリを
+追加（既存のリポジトリ名と一致すれば `path`／`branch` を上書き）してから、その場でそのプラグインだけを
+導入する（詳細は [cli.md](cli.md#--plugin-install-リポジトリ-url--b-ブランチ)）。
+
 ```yaml
 # 拡張プラグインがビルド時に ProjectReference で参照する共有ライブラリ（baselib）。省略時は既定値。
 baselib:

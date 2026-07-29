@@ -11,6 +11,10 @@ namespace ai_harness_main;
 /// 本体（<c>ai-harness-main</c> 自身）の更新は対象外。拡張プラグインのみを扱う。
 /// 前提コマンド（<c>git</c>／<c>dotnet</c>）が PATH に無ければ何もせず異常終了（非 0）。
 ///
+/// <see cref="RunInstall"/> は <c>--plugin install &lt;url&gt; [-b &lt;branch&gt;]</c> の実体。
+/// <see cref="PluginsYamlEditor"/> で plugins.yml へエントリを追加／上書きしてから、
+/// <see cref="RunSingle"/> と同じ経路（baselib 用意 → clone／build → 配置 → daemon 再起動）で導入する。
+///
 /// 出力は手動実行の CLI として stdout／stderr へ直接書く（daemon のログ経路は使わない）。
 /// </summary>
 internal static class PluginInstaller
@@ -163,13 +167,80 @@ internal static class PluginInstaller
             return ExitError;
         }
 
+        return InstallPluginAndRestart(entry, config.Baselib, "更新しました");
+    }
+
+    /// <summary>
+    /// <c>--plugin install &lt;url&gt; [-b &lt;branch&gt;]</c> の実体。<c>config/plugins.yml</c> へ
+    /// <paramref name="url"/>／<paramref name="branch"/> のエントリを追加（既存なら上書き）してから、
+    /// その場で clone／build・<c>lib/</c> への配置まで行う（<see cref="RunSingle"/> と同じ経路）。
+    /// </summary>
+    public static int RunInstall(string url, string branch)
+    {
+        if (!CommandExists("git"))
+        {
+            Console.Error.WriteLine("git が見つからない。git をインストールしてから再実行。");
+            return ExitError;
+        }
+        if (!CommandExists("dotnet"))
+        {
+            Console.Error.WriteLine("dotnet が見つからない。.NET SDK をインストールしてから再実行。");
+            return ExitError;
+        }
+
+        if (!PluginsYamlEditor.TryUpsert(InstallPaths.PluginsConfigPath, url, branch, out var created, out var editError))
+        {
+            Console.Error.WriteLine(editError);
+            return ExitError;
+        }
+        Console.WriteLine(created
+            ? $"plugins.yml を新規作成: {InstallPaths.PluginsConfigPath}"
+            : $"plugins.yml を更新: {InstallPaths.PluginsConfigPath}");
+
+        PluginsConfig config;
+        try
+        {
+            config = PluginsConfig.Load(InstallPaths.PluginsConfigPath)
+                ?? throw new InvalidOperationException("読み込んだ内容が空。");
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"plugins.yml の解析に失敗: {ex.Message}");
+            return ExitError;
+        }
+
+        var name = RepoName(url);
+        var entry = config.Plugins.FirstOrDefault(
+            p => string.Equals(RepoName(p.Path), name, StringComparison.OrdinalIgnoreCase));
+        if (entry is null)
+        {
+            // 直前の TryUpsert が成功していれば必ず見つかるはずの内部不整合。
+            Console.Error.WriteLine("plugins.yml への反映を確認できない（内部エラー）。");
+            return ExitError;
+        }
+
+        Directory.CreateDirectory(InstallPaths.ReposDir);
+        Directory.CreateDirectory(InstallPaths.LibDir);
+
+        Console.WriteLine();
+        return InstallPluginAndRestart(entry, config.Baselib, "導入しました");
+    }
+
+    /// <summary>
+    /// baselib を用意してから 1 プラグインを clone／build・配置し、稼働中の daemon を再起動する
+    /// （<see cref="RunSingle"/> と <see cref="RunInstall"/> の共通経路）。<paramref name="completionVerb"/> は
+    /// 完了メッセージの末尾（「更新しました」／「導入しました」）で呼び出し元ごとに文言を変える。
+    /// </summary>
+    private static int InstallPluginAndRestart(
+        PluginsConfig.PluginEntry entry, PluginsConfig.PluginEntry baselib, string completionVerb)
+    {
         // 拡張プラグインは baselib を兄弟ディレクトリ相対参照でビルド時参照するため、ビルド前に用意する。
         bool baselibChanged;
         try
         {
-            Console.WriteLine($"==== baselib: {config.Baselib.Path} ({config.Baselib.Branch}) ====");
+            Console.WriteLine($"==== baselib: {baselib.Path} ({baselib.Branch}) ====");
             var baselibDir = Path.Combine(InstallPaths.ReposDir, BaselibDirName);
-            baselibChanged = CloneOrUpdate(config.Baselib.Path, config.Baselib.Branch, baselibDir);
+            baselibChanged = CloneOrUpdate(baselib.Path, baselib.Branch, baselibDir);
         }
         catch (Exception ex)
         {
@@ -189,14 +260,14 @@ internal static class PluginInstaller
             return ExitError;
         }
 
-        // 単一プラグイン更新は本体自己更新を伴わない。新 DLL を反映するため daemon を再起動する。
+        // 単一プラグインの更新／導入は本体自己更新を伴わない。新 DLL を反映するため daemon を再起動する。
         if (Daemon.IsRunning())
         {
             Console.WriteLine("daemon を再起動して変更を反映。");
             Daemon.Restart();
         }
         Console.WriteLine();
-        Console.WriteLine($"プラグイン {RepoName(entry.Path)} を更新しました。");
+        Console.WriteLine($"プラグイン {RepoName(entry.Path)} を{completionVerb}。");
         return ExitOk;
     }
 

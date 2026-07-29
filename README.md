@@ -118,7 +118,7 @@ ai-harness-main --init <プロジェクト>
 | 起動 | 役割 |
 |---|---|
 | （引数なし） | bridge。hook ごとに Claude Code が叩く受け口。stdin を daemon へ中継。未起動なら daemon を起動。stdin が端末・空なら使い方を出して 1 |
-| `--init [プロジェクト] [--enable 名,…]` | プロジェクトへの配線を自動化。`settings.json` に hook を追記し、プラグインを選ばせて `common.yml` へ有効化する |
+| `--init [プロジェクト] [--enable 名,…] [--no-plugins]` | プロジェクトへの配線を自動化。`settings.json` に hook を追記し、プラグインを選ばせて `common.yml` へ有効化する（`--no-plugins` は配線のみで終える） |
 | `--daemon` / `--ensure` / `--restart` / `--stop` | daemon の制御。`--restart` は `lib` のプラグイン DLL 差し替え反映用 |
 | `--standalone` | daemon を介さず stdin を 1 件処理して終了（テスト・フォールバック） |
 | `--update` | `config/plugins.yml` に従いプラグインを `lib/` へ配置し、本体自身も置換（自己更新） |
@@ -127,6 +127,7 @@ ai-harness-main --init <プロジェクト>
 | `--doctor` | この配置でハーネスが機能するか診断（`lib`・native・daemon・`git`/`dotnet`） |
 | `--project` / `--logs` / `--plugin` | 読み取り専用の情報表示（展開中プロジェクト／ログ／プラグイン） |
 | `--plugin [プロジェクト] --enable\|--disable <名,…>` | プロジェクトの `common.yml` の `tools` を書き換えてプラグインを有効化／無効化。ホットリロードで無停止反映 |
+| `--plugin install <リポジトリ URL> [-b <ブランチ>]` | `config/plugins.yml` へエントリを追加／上書きし、その場で clone／build・`lib/` へ配置（ブランチ省略時は `main`） |
 | `--fire [プラグイン名]` | 有効プラグインの能動スキャン。hook とは独立でゲートではない。0=問題なし / 2=検出 / 1=実行不能 |
 | `--version` / `--help` | 版の表示／使い方 |
 
@@ -175,7 +176,8 @@ ai-harness-main/
     │   └── ProjectConfig.cs     プロジェクト個別設定（common.yml ロード）
     ├── Install/
     │   ├── PluginsConfig.cs     plugins.yml ロード（self／baselib／plugins のインストール定義）
-    │   ├── PluginInstaller.cs   --update 実体（プラグインの clone／build／lib 配置、本体自己更新への橋渡し）
+    │   ├── PluginsYamlEditor.cs plugins.yml への 1 エントリ追加／上書き（--plugin install 実体の一部。行単位の最小編集）
+    │   ├── PluginInstaller.cs   --update／--plugin install 実体（プラグインの clone／build／lib 配置、本体自己更新への橋渡し）
     │   └── SelfUpdater.cs       本体自己更新（tmp へ publish → --apply-update で実行体を置換・検証・ロールバック）
     ├── Logging/
     │   └── Logger.cs            レベルフィルタ＋ログ集約（出力先は引数）

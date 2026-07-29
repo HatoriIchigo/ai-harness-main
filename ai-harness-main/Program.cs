@@ -27,6 +27,8 @@ namespace ai_harness_main;
 ///                  ai-harness-main の PreToolUse／PostToolUse hook を追記し（配線済みなら変更なし）、
 ///                  有効化するプラグインを選ばせ（<c>--enable 名,…</c> があればそれを使う）、
 ///                  common.yml の tools へ書き込む（プロジェクト無指定は cwd から解決）。
+///                  <c>--no-plugins</c> を付けるとプラグイン選択を丸ごと飛ばし、settings.json への
+///                  配線のみで終える。
 ///
 /// 情報表示（人間向け。ハーネスの動作には影響しない）:
 ///
@@ -38,6 +40,10 @@ namespace ai_harness_main;
 ///   --plugin [&lt;プロジェクト&gt;] --enable|--disable &lt;プラグイン名,…&gt; … そのプロジェクトの common.yml の
 ///                  tools を書き換えて有効化／無効化する（プロジェクト無指定は cwd から解決）。設定 YAML は
 ///                  ホットリロード対象のため daemon の再起動は要らない。
+///   --plugin install &lt;リポジトリ URL&gt; [-b|--branch &lt;ブランチ&gt;] … config/plugins.yml へその
+///                  プラグインのエントリを追加（既存なら上書き）してから、その場で clone／build・
+///                  lib/ へ配置する（daemon が稼働中なら再起動して反映）。ブランチ省略時は main。
+///                  git／dotnet 未導入なら異常終了（非 0）。
 ///   --fire       … cwd のプロジェクトで有効プラグインの能動スキャン（Fire）を daemon 経由で一斉起動。
 ///   --fire &lt;プラグイン名&gt; … そのプラグインだけ Fire を起動。
 ///                  終了コードは 0=問題なし / 2=いずれかが検出 / 1=接続・実行不能（hook 規約とは別系統）。
@@ -115,6 +121,17 @@ public static class Program
             case "--health":
                 Console.WriteLine("ai-harness-main OK");
                 return ExitAllow;
+
+            case "--plugin" when args.Length > 1 && string.Equals(args[1], "install", StringComparison.Ordinal):
+            {
+                if (!TryParsePluginInstall(args, out var url, out var branch, out var installError))
+                {
+                    await Console.Error.WriteLineAsync(installError).ConfigureAwait(false);
+                    await Console.Error.WriteLineAsync(Usage.Text).ConfigureAwait(false);
+                    return ExitUsage;
+                }
+                return PluginInstaller.RunInstall(url, branch);
+            }
 
             case "--init":
             case "--doctor":
@@ -194,6 +211,57 @@ public static class Program
         return true;
     }
 
+    /// <summary>
+    /// <c>--plugin install &lt;url&gt; [-b|--branch &lt;branch&gt;]</c> の引数を解釈する。
+    /// <paramref name="url"/> は 1 個の位置引数（<c>args[2]</c> 以降）。<c>-b</c>／<c>--branch</c> を
+    /// 省略した場合、<paramref name="branch"/> は既定値 <c>main</c> になる。
+    /// </summary>
+    private static bool TryParsePluginInstall(
+        string[] args, out string url, out string branch, out string error)
+    {
+        url = "";
+        branch = "main";
+        error = "";
+
+        string? positional = null;
+        string? branchArg = null;
+        for (var i = 2; i < args.Length; i++)
+        {
+            var arg = args[i];
+            if (arg is "-b" or "--branch")
+            {
+                if (i + 1 >= args.Length)
+                {
+                    error = $"{arg} にはブランチ名を指定してください。";
+                    return false;
+                }
+                branchArg = args[++i];
+                continue;
+            }
+            if (arg.StartsWith('-'))
+            {
+                error = $"不明なオプション: {arg}";
+                return false;
+            }
+            if (positional is not null)
+            {
+                error = $"リポジトリ URL は 1 つだけ指定してください: {positional} / {arg}";
+                return false;
+            }
+            positional = arg;
+        }
+
+        if (positional is null)
+        {
+            error = "--plugin install にはリポジトリ URL を指定してください。";
+            return false;
+        }
+
+        url = positional;
+        branch = string.IsNullOrWhiteSpace(branchArg) ? "main" : branchArg.Trim();
+        return true;
+    }
+
     /// <summary>情報表示モードを実行する。<c>--project</c> は位置引数・オプションを取らない。</summary>
     private static async Task<int> RunInfoAsync(string mode, CliOptions options)
     {
@@ -201,7 +269,8 @@ public static class Program
         if (mode is "--project" or "--doctor")
         {
             if (options.Project is not null || options.Take is not null
-                || options.Levels is not null || options.DenyOnly || options.Toggles.Count > 0)
+                || options.Levels is not null || options.DenyOnly || options.Toggles.Count > 0
+                || options.NoPlugins)
             {
                 await Console.Error.WriteLineAsync($"{mode} は引数を取りません。").ConfigureAwait(false);
                 return ExitUsage;
@@ -215,6 +284,13 @@ public static class Program
         if (mode is not ("--plugin" or "--init") && options.Toggles.Count > 0)
         {
             await Console.Error.WriteLineAsync($"{mode} は --enable / --disable を取りません。").ConfigureAwait(false);
+            return ExitUsage;
+        }
+
+        // --no-plugins は --init のプラグイン選択を飛ばす専用オプション。他のモードでは受け付けない。
+        if (mode != "--init" && options.NoPlugins)
+        {
+            await Console.Error.WriteLineAsync($"{mode} は --no-plugins を取りません。").ConfigureAwait(false);
             return ExitUsage;
         }
 

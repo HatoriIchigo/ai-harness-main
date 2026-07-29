@@ -13,6 +13,10 @@ namespace ai_harness_main;
 ///     daemon の再起動なしで反映される。</item>
 /// </list>
 ///
+/// <c>--plugin install &lt;url&gt; [-b &lt;branch&gt;]</c>（本体直下 <c>config/plugins.yml</c> へのエントリ
+/// 追加・その場での clone／build／配置）は本クラスではなく <see cref="Program"/> が
+/// <see cref="PluginInstaller.RunInstall"/> へ直接ディスパッチする（プロジェクトを問わないグローバル操作のため）。
+///
 /// daemon には問い合わせない（<c>lib/</c> と <c>common.yml</c> はディスクが真実源であり、
 /// 照会・更新のために daemon を起こしたくないため）。
 ///

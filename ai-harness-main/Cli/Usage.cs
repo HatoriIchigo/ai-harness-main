@@ -25,9 +25,10 @@ internal static class Usage
           --health                  起動検証（ランタイムが正常起動すれば 0）
 
         初期化:
-          --init [プロジェクト] [--enable <名,…>]
+          --init [プロジェクト] [--enable <名,…>] [--no-plugins]
                                     settings.json に hook を配線し、プラグインを選ばせて（--enable が
-                                    あればそれを使う）common.yml へ有効化する（無指定は cwd から解決）
+                                    あればそれを使う）common.yml へ有効化する（無指定は cwd から解決）。
+                                    --no-plugins を付けるとプラグイン選択を飛ばし settings.json の配線のみ行う
 
         検証:
           --validate [プロジェクト] 設定で hook が通る状態か確かめる（無指定は cwd から解決）。
@@ -46,6 +47,12 @@ internal static class Usage
           --plugin [プロジェクト] --disable <名,…>  同じく無効化する
                                     プロジェクト無指定は cwd から解決。common.yml が無ければ新規作成する。
                                     設定はホットリロードされるため daemon の再起動は不要
+
+        プラグインの導入:
+          --plugin install <リポジトリ URL> [-b|--branch <ブランチ>]
+                                    config/plugins.yml へエントリを追加（既存なら上書き）し、
+                                    その場で clone／build・lib/ へ配置する（daemon 稼働中なら再起動）。
+                                    ブランチ省略時は main。git／dotnet が無ければ異常終了（非 0）
 
         スキャン:
           --fire   [プラグイン名]   cwd のプロジェクトで有効プラグインの能動スキャン（Fire）を

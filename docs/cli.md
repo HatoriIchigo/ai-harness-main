@@ -18,7 +18,7 @@ ai-harness-main [モード] [オプション]
 | モード | 役割 | 終了コード |
 |---|---|---|
 | （引数なし） | **bridge**。hook の受け口。stdin の hook JSON を daemon へ中継する。未起動なら daemon を起動 | 0=許可 / 2=deny / 1=hook 入力なし |
-| [`--init`](#--init-プロジェクト---enable-名) | プロジェクトへの配線を自動化する（settings.json の hook 追記＋プラグイン選択＋common.yml） | 0 / 1=拒否・引数エラー |
+| [`--init`](#--init-プロジェクト---enable-名---no-plugins) | プロジェクトへの配線を自動化する（settings.json の hook 追記＋プラグイン選択＋common.yml） | 0 / 1=拒否・引数エラー |
 | [`--daemon`](#--daemon) | 常駐サーバー。パイプで待ち受け、プロジェクト別に処理する | 0 |
 | [`--ensure`](#--ensure--restart--stop) | 未起動なら detached 起動する | 0 |
 | [`--restart`](#--ensure--restart--stop) | 停止→起動（`lib/` の DLL 差し替え反映） | 0 |
@@ -32,6 +32,7 @@ ai-harness-main [モード] [オプション]
 | [`--logs`](#--logs-プロジェクト-オプション) | ログを新しい順に表示する | 0 / 1=引数エラー |
 | [`--plugin`](#--plugin-プロジェクト) | プラグイン一覧／プロジェクトでの有効状態 | 0 / 1=引数エラー |
 | [`--plugin --enable\|--disable`](#--plugin-プロジェクト---enable--disable-名) | プロジェクトのプラグインを有効化／無効化する | 0 / 1=拒否・引数エラー |
+| [`--plugin install`](#--plugin-install-リポジトリ-url--b-ブランチ) | `plugins.yml` へエントリを追加／上書きし、その場で導入する | 0 / 非 0 |
 | [`--fire`](#--fire-プラグイン名) | 有効プラグインの能動スキャンを起動する | 0=問題なし / 2=検出 / 1=実行不能 |
 | [`--health`](#--health) | 起動検証（ランタイムが正常起動すれば 0） | 0 |
 | `--version`, `-v` | 版・ランタイム・実行体パスを表示する | 0 |
@@ -51,7 +52,7 @@ ai-harness-main [モード] [オプション]
 
 ## 初期化
 
-### `--init [プロジェクト] [--enable <名,…>]`
+### `--init [プロジェクト] [--enable <名,…>] [--no-plugins]`
 
 プロジェクトへのハーネス配線を自動化する。プロジェクト無指定は cwd から解決する
 （`.claude` が見つからなければ cwd 自体を配線先にする＝新規プロジェクトの初期化）。
@@ -68,12 +69,14 @@ ai-harness-main [モード] [オプション]
    `common.yml` の `tools` への書き込み）で有効化する。有効化がフェイルクローズを招く場合は、
    `common.yml` を書き換えずに拒否する（`--plugin --enable` と同じ安全策）。
 
-選ぶプラグインが 0 件なら `common.yml` には触れない。
+選ぶプラグインが 0 件なら `common.yml` には触れない。`--no-plugins` を付けると 2.／3. を丸ごと飛ばし、
+settings.json への配線だけで終える（`--enable` との同時指定は矛盾するため拒否する）。
 
 ```sh
 ai-harness-main --init                                              # cwd、対話選択
 ai-harness-main --init C:\Users\project1                            # プロジェクト指定、対話選択
 ai-harness-main --init --enable ai-harness-deny,ai-harness-git-commit  # 選択済み一覧を渡す
+ai-harness-main --init --no-plugins                                 # settings.json の配線のみ
 ```
 
 ## daemon 制御
@@ -260,6 +263,27 @@ $ ai-harness-main --plugin --enable deny-marker
 
 無効化は状態を改善する方向なので常に許す（`lib/` に無い名前でも、既に壊れた設定でも通る）。
 フェイルクローズからの**復旧経路**になるため。
+
+### `--plugin install <リポジトリ URL> [-b|--branch <ブランチ>]`
+
+本体直下の `config/plugins.yml` へそのプラグインの `path`／`branch` エントリを追加し、**その場で**
+`repos/` へ clone／build して `lib/` へ配置する。プロジェクトを問わないグローバル操作（`--update` の実体
+である `PluginInstaller` と同じ経路）で、`--plugin [プロジェクト]` の一覧・有効化とは別系統。
+
+- `plugins.yml` に同じ**リポジトリ名**（URL 末尾）のエントリが既にあれば、`path`／`branch` を**上書き**する。
+  無ければブロック末尾へ追記する。書き換えは行単位の最小編集で、既存のコメント・キー順を保つ。
+- `plugins.yml` 自体が無ければ、`self`／`baselib` を既定値にした新規ファイルを作る。
+- `-b` / `--branch` を省略した場合のブランチは `main`。
+- `git`／`dotnet` が PATH に無ければ**何もせず異常終了**（非 0）。
+- baselib をプラグインより先に `repos/ai-harness-baselib` へ用意してから build する（`--update` と同じ）。
+- 配置後、稼働中の daemon があれば自動 `--restart`。
+- `lib/` に入れただけでは発火しない。プロジェクトの `common.yml` の `tools` で有効化する
+  （`--plugin --enable` または `--init`）。
+
+```sh
+ai-harness-main --plugin install https://github.com/HatoriIchigo/ai-harness-file-rules
+ai-harness-main --plugin install https://github.com/HatoriIchigo/ai-harness-file-rules -b dev
+```
 
 ## スキャン
 

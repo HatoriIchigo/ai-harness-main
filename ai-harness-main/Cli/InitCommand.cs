@@ -1,7 +1,9 @@
 namespace ai_harness_main;
 
 /// <summary>
-/// <c>--init [プロジェクト] [--enable 名,…]</c>: 新規／既存プロジェクトへのハーネス配線を自動化する。
+/// <c>--init [プロジェクト] [--enable 名,…] [--no-plugins]</c>: 新規／既存プロジェクトへのハーネス配線を自動化する。
+/// <c>--no-plugins</c> を付けると下記 2.／3. を丸ごと飛ばし、settings.json への配線のみで終える
+/// （<c>--enable</c> との同時指定は矛盾するため拒否する）。
 ///
 /// <list type="number">
 ///   <item><c>.claude/settings.json</c> に <c>ai-harness-main</c> の <c>PreToolUse</c>／<c>PostToolUse</c>
@@ -32,6 +34,12 @@ internal static class InitCommand
                 "--init は --disable を受け付けません（--enable のみ）。").ConfigureAwait(false);
             return 1;
         }
+        if (options.NoPlugins && options.Toggles.Count > 0)
+        {
+            await Console.Error.WriteLineAsync(
+                "--no-plugins と --enable は同時に指定できません。").ConfigureAwait(false);
+            return 1;
+        }
 
         Console.Out.WriteLine($"project: {root}");
         Console.Out.WriteLine();
@@ -45,6 +53,14 @@ internal static class InitCommand
         Console.Out.WriteLine(settingsChanged
             ? "settings.json: ai-harness-main の hook を追加しました（PreToolUse／PostToolUse）。"
             : "settings.json: 既に ai-harness-main が配線済みです（変更なし）。");
+
+        if (options.NoPlugins)
+        {
+            Console.Out.WriteLine();
+            Console.Out.WriteLine("--no-plugins が指定されたため、プラグインの選択は行いません。");
+            Console.Out.WriteLine("初期化が完了しました（settings.json の配線のみ）。");
+            return 0;
+        }
 
         var (registry, plugins) = PluginsCommand.Discover();
         if (plugins.Count == 0)
