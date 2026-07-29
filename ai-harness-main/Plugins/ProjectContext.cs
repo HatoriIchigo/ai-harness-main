@@ -63,10 +63,11 @@ internal sealed class ProjectContext : IDisposable
             logger.Write(LogLevel.Warning, warning);
         }
 
-        // 登録（初回活性化）時のみ rule を配置する。宛先はこのプロジェクトの .claude/rules。
-        // Reload / --validate は copyRulesTo を渡さない（配置しない）。
+        // 登録（初回活性化）時のみ rule/skill を配置する。宛先はこのプロジェクトの .claude/rules・.claude/skills。
+        // Reload / --validate は copyRulesTo/copySkillsTo を渡さない（配置しない）。
         var rulesDir = Path.Combine(projectRoot, ".claude", "rules");
-        var validation = ValidateAndInit(registry.Types, config, logger.Emit, rulesDir);
+        var skillsDir = Path.Combine(projectRoot, ".claude", "skills");
+        var validation = ValidateAndInit(registry.Types, config, logger.Emit, rulesDir, skillsDir);
         // state ストアは設定ホットリロード（有効プラグイン再構築）とは独立に 1 つ保持する。
         var stateStore = StateStore.Create(projectRoot, globalLog);
 
@@ -207,14 +208,15 @@ internal sealed class ProjectContext : IDisposable
     /// ログの宛先は <paramref name="log"/>。<c>--validate</c> から呼ぶときはログを捨てられるよう
     /// <see cref="Logger"/> ではなくデリゲートを取る（検証がプロジェクトのログを汚さないため）。
     ///
-    /// <paramref name="copyRulesTo"/> が非 null のとき、有効化・Init 済みの各プラグインの
-    /// <see cref="PluginBase.CopyRule"/> をそのディレクトリへ実行し rule を配置する（<c>Create</c> のみ渡す。
-    /// <c>Reload</c> / <c>--validate</c> は null＝配置しない）。配置は hook のゲートではないため、
-    /// 失敗しても検証結果には影響させず warning ログに留める（フェイルオープン）。
+    /// <paramref name="copyRulesTo"/> / <paramref name="copySkillsTo"/> が非 null のとき、有効化・Init 済みの
+    /// 各プラグインの <see cref="PluginBase.CopyRule"/> / <see cref="PluginBase.CopySkill"/> をそれぞれの
+    /// ディレクトリへ実行し rule・skill を配置する（<c>Create</c> のみ渡す。<c>Reload</c> / <c>--validate</c> は
+    /// null＝配置しない）。配置は hook のゲートではないため、失敗しても検証結果には影響させず
+    /// warning ログに留める（フェイルオープン）。
     /// </summary>
     public static StartupValidation ValidateAndInit(
         IReadOnlyList<Type> types, ProjectConfig config, Action<LogEntry> log,
-        string? copyRulesTo = null)
+        string? copyRulesTo = null, string? copySkillsTo = null)
     {
         var toolToggles = config.ToolToggles;
         // パス 2（相互検証）で設定ロード済みインスタンスを再利用するため、型と一緒に保持する。
@@ -309,6 +311,22 @@ internal sealed class ProjectContext : IDisposable
                 catch (Exception ex)
                 {
                     log(LogEntry.Warning($"rule 配置に失敗（継続）: {ex.Message}") with { Source = name });
+                }
+            }
+
+            // skill 配布（copySkillsTo は Create のときのみ非 null）。rule と同じくフェイルオープン。
+            if (copySkillsTo is not null)
+            {
+                try
+                {
+                    foreach (var written in plugin.CopySkill(copySkillsTo))
+                    {
+                        log(LogEntry.Info($"skill を配置: {written}") with { Source = name });
+                    }
+                }
+                catch (Exception ex)
+                {
+                    log(LogEntry.Warning($"skill 配置に失敗（継続）: {ex.Message}") with { Source = name });
                 }
             }
 
