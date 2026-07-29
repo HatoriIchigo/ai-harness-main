@@ -303,7 +303,7 @@ internal sealed class ProjectContext : IDisposable
             {
                 try
                 {
-                    if (plugin.CopyRule(copyRulesTo) is { } written)
+                    foreach (var written in plugin.CopyRule(copyRulesTo))
                     {
                         log(LogEntry.Info($"rule を配置: {written}") with { Source = name });
                     }
