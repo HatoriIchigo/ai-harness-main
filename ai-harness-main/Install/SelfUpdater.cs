@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+using System.Security.Cryptography;
 using ai_harness_baselib;
 
 namespace ai_harness_main;
@@ -132,14 +133,28 @@ internal static class SelfUpdater
                 }
             }
 
-            // 3. 現行実行体を退避。
+            // 3. 付随ディレクトリを同期。実行体だけを置換すると、新バイナリが要求する tree-sitter
+            //    native や既定テンプレートが古いまま残る。daemon 停止済みのこの時点で、実行体より
+            //    先に配る（新実行体が起きた瞬間に揃っている状態にする）。
+            foreach (var name in SyncedDirectories)
+            {
+                var written = SyncDirectory(
+                    Path.Combine(Path.GetDirectoryName(Environment.ProcessPath!)!, name),
+                    Path.Combine(installDir, name));
+                if (written > 0)
+                {
+                    log.Write(LogLevel.Info, $"{name}/ を同期。更新 {written} 件。");
+                }
+            }
+
+            // 4. 現行実行体を退避。
             File.Copy(target, backup, overwrite: true);
 
-            // 4. 新バイナリで上書き（ロック解放前は失敗し得るためリトライ）。
+            // 5. 新バイナリで上書き（ロック解放前は失敗し得るためリトライ）。
             CopyWithRetry(Environment.ProcessPath!, target, TimeSpan.FromSeconds(30));
             log.Write(LogLevel.Info, "実行体を置換。起動検証中。");
 
-            // 5. 置換後の起動検証。失敗ならロールバック。
+            // 6. 置換後の起動検証。失敗ならロールバック。
             if (RunExe(target, ["--health"]) != 0)
             {
                 File.Copy(backup, target, overwrite: true);
@@ -225,6 +240,60 @@ internal static class SelfUpdater
         {
             // 既に終了済み。
         }
+    }
+
+    /// <summary>
+    /// 実行体と一緒にインストール先へ同期する付随ディレクトリ。いずれも publish 出力に含まれるが、
+    /// 実行体 1 ファイルの置換だけでは更新されない。
+    /// <c>runtimes</c> = tree-sitter native（自前ビルド。<c>native/&lt;rid&gt;/</c> から publish が配る）と
+    /// <c>versions.json</c>、<c>resources</c> = プロジェクトへ配る既定テンプレート。
+    /// </summary>
+    private static readonly string[] SyncedDirectories = ["runtimes", "resources"];
+
+    /// <summary>
+    /// <paramref name="source"/> の内容を <paramref name="dest"/> へ再帰コピーする。書き込んだ件数を返す。
+    ///
+    /// 内容が同一（サイズと SHA-256 が一致）のファイルは書き込まない。版を上げていない
+    /// <c>--update</c> で native が毎回書き換わるのを避けるため。
+    /// <paramref name="dest"/> 側にしか無いファイルは<b>消さない</b>。tree-sitter native は
+    /// 複数プラグインの共有物で、リリースから外れた grammar をまだ使うプラグインが残り得るため
+    /// （残留は doctor が <c>versions.json</c> との差分として報告する）。
+    /// </summary>
+    private static int SyncDirectory(string source, string dest)
+    {
+        if (!Directory.Exists(source))
+        {
+            return 0;
+        }
+
+        var written = 0;
+        foreach (var file in Directory.EnumerateFiles(source, "*", SearchOption.AllDirectories))
+        {
+            var target = Path.Combine(dest, Path.GetRelativePath(source, file));
+            if (SameContent(file, target))
+            {
+                continue;
+            }
+            Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+            CopyWithRetry(file, target, TimeSpan.FromSeconds(10));
+            written++;
+        }
+        return written;
+    }
+
+    /// <summary>2 ファイルが同一内容か（サイズ一致かつ SHA-256 一致）。<paramref name="dest"/> 不在は false。</summary>
+    private static bool SameContent(string source, string dest)
+    {
+        var from = new FileInfo(source);
+        var to = new FileInfo(dest);
+        if (!to.Exists || from.Length != to.Length)
+        {
+            return false;
+        }
+
+        using var a = File.OpenRead(source);
+        using var b = File.OpenRead(dest);
+        return SHA256.HashData(a).AsSpan().SequenceEqual(SHA256.HashData(b));
     }
 
     private static void CopyWithRetry(string source, string dest, TimeSpan timeout)

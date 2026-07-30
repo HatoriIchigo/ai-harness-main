@@ -195,7 +195,8 @@ ai-harness-main --validate C:\Users\project1  # 明示指定
 **この配置でハーネスが機能するか**を診断する。プロジェクト設定ではなくインストール環境を見る。
 
 - `lib/` の DLL
-- tree-sitter の native grammar（実際にロードを試す）
+- tree-sitter の native（実際にロードを試す。あわせて `runtimes/versions.json` と照合し、宣言された
+  native の欠落と `lib/TreeSitter.dll` との版不一致を報告する）
 - `resources/`・ログ出力先
 - daemon の稼働
 - `--update` が要求する `git`／`dotnet`

@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+using System.Text.Json;
 using ai_harness_baselib;
 
 namespace ai_harness_main;
@@ -44,6 +45,11 @@ internal static class DoctorProbes
     /// 実行体隣の <c>runtimes/&lt;rid&gt;/native</c> を実際にロードしてみる。
     /// tree-sitter grammar はここからフルパスで事前ロードされる（ベア名では解決できない）。
     /// 無い・ロードできない場合、tree-sitter を使うプラグインだけが AST 解析に失敗する。
+    ///
+    /// あわせて <c>runtimes/versions.json</c>（版の一元宣言。ソースは <c>native/versions.json</c>）と
+    /// 照合し、宣言された native の欠落と、<c>lib/</c> の管理 DLL（<c>TreeSitter.dll</c>）との版不一致を
+    /// 検出する。native は自前ビルドで本体リポジトリが版を握り、管理 DLL は各プラグインの csproj が
+    /// NuGet から参照するため、両者は別経路で更新される＝食い違う余地がある。
     /// </summary>
     public static DoctorCheck Native()
     {
@@ -69,14 +75,125 @@ internal static class DoctorProbes
             }
         }
 
+        var notes = new List<string>();
         if (failed.Count > 0)
         {
             var shown = string.Join(", ", failed.Take(3));
             var rest = failed.Count > 3 ? $" ほか {failed.Count - 3} 件" : "";
-            return DoctorCheck.Warn("native (tree-sitter)",
-                $"{files.Count} 個中 {failed.Count} 個がロード不可: {shown}{rest}");
+            notes.Add($"{files.Count} 個中 {failed.Count} 個がロード不可: {shown}{rest}");
         }
-        return DoctorCheck.Ok("native (tree-sitter)", $"{files.Count} 個をロード可 (rid={rid})");
+        notes.AddRange(VersionNotes(dir, rid));
+
+        return notes.Count > 0
+            ? DoctorCheck.Warn("native (tree-sitter)", string.Join("。", notes))
+            : DoctorCheck.Ok("native (tree-sitter)", $"{files.Count} 個をロード可 (rid={rid})");
+    }
+
+    /// <summary>
+    /// <c>runtimes/versions.json</c> と実配置・管理 DLL を照合し、問題があればその説明を返す。
+    /// versions.json 自体が無い／読めない場合は照合を諦めて空を返す（native のロード可否だけで診断する。
+    /// 旧レイアウトからの移行中や手で配置した環境を error 扱いにしないため）。
+    /// </summary>
+    private static IEnumerable<string> VersionNotes(string nativeDir, string rid)
+    {
+        var manifest = Path.Combine(AppContext.BaseDirectory, "runtimes", "versions.json");
+        if (!File.Exists(manifest))
+        {
+            yield break;
+        }
+
+        // yield は catch 句の本体では使えない（CS1631）ため、例外は変数に受けてから外で yield する。
+        JsonDocument? doc = null;
+        Exception? readError = null;
+        try
+        {
+            doc = JsonDocument.Parse(File.ReadAllText(manifest));
+        }
+        catch (Exception ex)
+        {
+            readError = ex;
+        }
+        if (doc is null)
+        {
+            yield return $"versions.json を読めない（{readError?.GetType().Name}）";
+            yield break;
+        }
+
+        using (doc)
+        {
+            var root = doc.RootElement;
+
+            // 宣言された native が実際に置かれているか（RID 別のファイル名で照合）。
+            var missing = new List<string>();
+            foreach (var name in DeclaredNativeNames(root, rid))
+            {
+                if (!File.Exists(Path.Combine(nativeDir, name)))
+                {
+                    missing.Add(name);
+                }
+            }
+            if (missing.Count > 0)
+            {
+                var shown = string.Join(", ", missing.Take(3));
+                var rest = missing.Count > 3 ? $" ほか {missing.Count - 3} 件" : "";
+                yield return $"versions.json の宣言に対し {missing.Count} 個欠落: {shown}{rest}";
+            }
+
+            // 管理 DLL（lib/TreeSitter.dll）と宣言版の照合。lib に無ければ tree-sitter プラグイン自体が
+            // 未導入なので照合しない。
+            if (!root.TryGetProperty("managedBinding", out var binding)
+                || !binding.TryGetProperty("version", out var versionEl)
+                || versionEl.GetString() is not { Length: > 0 } declared)
+            {
+                yield break;
+            }
+            var dll = Path.Combine(InstallPaths.LibDir, "TreeSitter.dll");
+            if (!File.Exists(dll))
+            {
+                yield break;
+            }
+            var actual = FileVersionInfo.GetVersionInfo(dll).ProductVersion;
+            if (actual is not null && !actual.StartsWith(declared, StringComparison.Ordinal))
+            {
+                yield return $"lib/TreeSitter.dll が {actual} で versions.json の宣言 {declared} と不一致"
+                    + "（AST 解析が失敗する可能性。プラグイン側の TreeSitter.DotNet 参照版を合わせる）";
+            }
+        }
+    }
+
+    /// <summary><c>versions.json</c> が当該 RID について宣言している native のファイル名を列挙する。</summary>
+    private static IEnumerable<string> DeclaredNativeNames(JsonElement root, string rid)
+    {
+        if (root.TryGetProperty("core", out var core))
+        {
+            foreach (var name in FileNameFor(core, rid))
+            {
+                yield return name;
+            }
+        }
+        if (!root.TryGetProperty("grammars", out var grammars) || grammars.ValueKind != JsonValueKind.Object)
+        {
+            yield break;
+        }
+        foreach (var grammar in grammars.EnumerateObject())
+        {
+            foreach (var name in FileNameFor(grammar.Value, rid))
+            {
+                yield return name;
+            }
+        }
+    }
+
+    private static IEnumerable<string> FileNameFor(JsonElement entry, string rid)
+    {
+        if (entry.ValueKind == JsonValueKind.Object
+            && entry.TryGetProperty("files", out var files)
+            && files.TryGetProperty(rid, out var forRid)
+            && forRid.TryGetProperty("name", out var nameEl)
+            && nameEl.GetString() is { Length: > 0 } name)
+        {
+            yield return name;
+        }
     }
 
     /// <summary>プロジェクトへコピーする既定リソース（<c>phase.yml</c> 等）。</summary>

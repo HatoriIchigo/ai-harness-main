@@ -46,10 +46,14 @@ applier は bat/sh ではなく**本体と同一コードベースの内部モ�
 
 1. **旧プロセス終了待ち** — `--pid` のプロセスを最大 30 秒待つ（exe ロック解放のため）。
 2. **daemon 停止** — 停止シグナルを送り、完全停止（ロック解放）まで待つ。パイプ名は**インストール先ディレクトリ基準**で算出する（applier は tmp から動くため `HarnessPipe.NameFor(installDir)` を使う。`AppContext.BaseDirectory` 基準の `Name()` では別物になる）。
-3. **退避** — 現行実行体を `<exe>.bak` へコピー。
-4. **上書き** — 新バイナリを `--target` へコピー。ロック解放が間に合わない場合に備え、`IOException` / `UnauthorizedAccessException` を最大 30 秒**リトライ**する。
-5. **置換後検証** — `<target> --health`。失敗なら `.bak` から**ロールバック**し、非 0 で終了。
-6. **仕上げ** — 成功なら `.bak` を削除。daemon が動いていたなら `<target> --ensure` で再起動（新 `lib` と新バイナリを反映）。tmp を掃除（自分自身の exe を含むため Windows では消えないことがあり best-effort）。
+3. **付随ディレクトリの同期** — publish 出力に含まれるが実行体 1 ファイルの置換では更新されないもの（`runtimes/`＝tree-sitter native と `versions.json`、`resources/`＝プロジェクトへ配る既定テンプレート）を、tmp の publish 出力からインストール先へ再帰コピーする（`SyncDirectory`）。
+   - **実行体より先に配る。** 新バイナリが起きた瞬間に、それが要求する grammar とテンプレートが揃っている状態にする。daemon は 2. で停止済みなので、native を差し替えても稼働中のプロセスに影響しない。
+   - **内容が同一（サイズと SHA-256 が一致）ならスキップ。** 版を上げていない `--update` で native が毎回書き換わるのを避ける。
+   - **インストール先にしか無いファイルは消さない。** tree-sitter native は複数プラグインの共有物で、リリースから外れた grammar をまだ使うプラグインが残り得る（残留は `--doctor` が `versions.json` との差分として報告する）。
+4. **退避** — 現行実行体を `<exe>.bak` へコピー。
+5. **上書き** — 新バイナリを `--target` へコピー。ロック解放が間に合わない場合に備え、`IOException` / `UnauthorizedAccessException` を最大 30 秒**リトライ**する。
+6. **置換後検証** — `<target> --health`。失敗なら `.bak` から**ロールバック**し、非 0 で終了。ロールバックは実行体だけを戻す（3. で配ったファイルは追加・上書きのみで、旧実行体が要求するものは残っているため）。
+7. **仕上げ** — 成功なら `.bak` を削除。daemon が動いていたなら `<target> --ensure` で再起動（新 `lib` と新バイナリを反映）。tmp を掃除（自分自身の exe を含むため Windows では消えないことがあり best-effort）。
 
 ## フェイルセーフ設計
 

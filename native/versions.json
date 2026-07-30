@@ -1,0 +1,201 @@
+{
+  "_comment": "tree-sitter native の版の一元宣言。native/ のバイナリはここで固定した upstream から自前ビルドしたもの。更新手順は native/README.md。",
+  "managedBinding": {
+    "package": "TreeSitter.DotNet",
+    "version": "1.3.0",
+    "note": "C# バインディング（TreeSitter.dll）。各 tree-sitter プラグインの csproj がこの版を参照する。native はここではなく下記の自前ビルドを使う。"
+  },
+  "core": {
+    "upstream": "tree-sitter/tree-sitter",
+    "tag": "v0.26.11",
+    "commit": "64402de",
+    "license": "MIT",
+    "soname": "libtree-sitter.so.0.26",
+    "files": {
+      "linux-x64": {
+        "name": "libtree-sitter.so",
+        "sha256": "459c90767310cd667f33c91d8912dd409b6025b2c7f0478d1bdb3313fe1b02ac"
+      },
+      "win-x64": {
+        "name": "tree-sitter.dll",
+        "sha256": "6879077b3271f928df224e4546a69707ce7492cd5e987092482f28e463d2468c"
+      }
+    }
+  },
+  "grammars": {
+    "bash": {
+      "upstream": "tree-sitter/tree-sitter-bash",
+      "tag": "v0.25.1",
+      "commit": "a06c2e4",
+      "license": "MIT",
+      "languageVersion": 15,
+      "files": {
+        "linux-x64": {
+          "name": "libtree-sitter-bash.so",
+          "sha256": "43d261a83cc56b81f0ab1737a4da2b430c4da0103fb1584af4ce2e3f91d512fa"
+        },
+        "win-x64": {
+          "name": "tree-sitter-bash.dll",
+          "sha256": "a27bc1e2cc0603f6be425c54d093aa9aa61d73089a3b711f52f77f64506ce6af"
+        }
+      }
+    },
+    "c": {
+      "upstream": "tree-sitter/tree-sitter-c",
+      "tag": "v0.24.2",
+      "commit": "b780e47",
+      "license": "MIT",
+      "languageVersion": 15,
+      "files": {
+        "linux-x64": {
+          "name": "libtree-sitter-c.so",
+          "sha256": "b9cb2e3c496fd2d2ed234cd8b72f60cc671c9bbb4d6918d5796bb3dc04c0a1a3"
+        },
+        "win-x64": {
+          "name": "tree-sitter-c.dll",
+          "sha256": "43759396ceb5bac39e9ef462670bc89adc641685a72225fe5da15fa12a647d55"
+        }
+      }
+    },
+    "cpp": {
+      "upstream": "tree-sitter/tree-sitter-cpp",
+      "tag": "v0.23.4",
+      "commit": "f41e1a0",
+      "license": "MIT",
+      "languageVersion": 14,
+      "files": {
+        "linux-x64": {
+          "name": "libtree-sitter-cpp.so",
+          "sha256": "fc2c39cca363a4fe900937cea8c5e5e46e1fbb585443b3d8b09751d44a06c7b4"
+        },
+        "win-x64": {
+          "name": "tree-sitter-cpp.dll",
+          "sha256": "1c314d4aaaa9151340abe7d01aeab122dad36cc2ae3f656dec5f4ceb184ee1c6"
+        }
+      }
+    },
+    "go": {
+      "upstream": "tree-sitter/tree-sitter-go",
+      "tag": "v0.25.0",
+      "commit": "1547678",
+      "license": "MIT",
+      "languageVersion": 15,
+      "files": {
+        "linux-x64": {
+          "name": "libtree-sitter-go.so",
+          "sha256": "e380ad1eb5afcf59b5c11f1e8edfea5a5e5c7eb28e44986107616f7bb4de57c2"
+        },
+        "win-x64": {
+          "name": "tree-sitter-go.dll",
+          "sha256": "60455747a9e26a2265c7ae11ab7bd3929f0d2098aef9b6b298847ca95ebb95ca"
+        }
+      }
+    },
+    "java": {
+      "upstream": "tree-sitter/tree-sitter-java",
+      "tag": "v0.23.5",
+      "commit": "94703d5",
+      "license": "MIT",
+      "languageVersion": 14,
+      "files": {
+        "linux-x64": {
+          "name": "libtree-sitter-java.so",
+          "sha256": "898b8f79d1820cae4827e94071d93eedb85def2719f33ae89a3695849aa2761b"
+        },
+        "win-x64": {
+          "name": "tree-sitter-java.dll",
+          "sha256": "2a089f8041850375fc086888702ad50380ac268cd0a567492e8e8243605fa559"
+        }
+      }
+    },
+    "python": {
+      "upstream": "tree-sitter/tree-sitter-python",
+      "tag": "v0.25.0",
+      "commit": "293fdc0",
+      "license": "MIT",
+      "languageVersion": 15,
+      "files": {
+        "linux-x64": {
+          "name": "libtree-sitter-python.so",
+          "sha256": "1f39ce5168721c236ab425aa5d39e2707dd098e4ca2fb21e27559038ef1b9edc"
+        },
+        "win-x64": {
+          "name": "tree-sitter-python.dll",
+          "sha256": "a0566ae734cd57bbf7f1bc60670d9e6e7ed372298b8679c1a2dbc886c5a84adc"
+        }
+      }
+    },
+    "rust": {
+      "upstream": "tree-sitter/tree-sitter-rust",
+      "tag": "v0.24.2",
+      "commit": "77a3747",
+      "license": "MIT",
+      "languageVersion": 15,
+      "files": {
+        "linux-x64": {
+          "name": "libtree-sitter-rust.so",
+          "sha256": "30f458bc863eeecf2c0207c8f9fbfb3eb44aeea8a6a3d785c65509fbe59d2e73"
+        },
+        "win-x64": {
+          "name": "tree-sitter-rust.dll",
+          "sha256": "2c13628aaaefca8d7dbe209aabe249162f61df8a17f64a1cc073c046fd053c6f"
+        }
+      }
+    },
+    "typescript": {
+      "upstream": "tree-sitter/tree-sitter-typescript",
+      "tag": "v0.23.2",
+      "commit": "f975a62",
+      "license": "MIT",
+      "languageVersion": 14,
+      "files": {
+        "linux-x64": {
+          "name": "libtree-sitter-typescript.so",
+          "sha256": "acb3830f5533d0473063ac50554ce878b6ccdb496844f48ea37787241aa579c5"
+        },
+        "win-x64": {
+          "name": "tree-sitter-typescript.dll",
+          "sha256": "19fbc72ab39a166dc4d897583669c170e9198fdedb16bfe69140f4b17b4a94fd"
+        }
+      }
+    },
+    "tsx": {
+      "upstream": "tree-sitter/tree-sitter-typescript",
+      "tag": "v0.23.2",
+      "commit": "f975a62",
+      "license": "MIT",
+      "languageVersion": 14,
+      "files": {
+        "linux-x64": {
+          "name": "libtree-sitter-tsx.so",
+          "sha256": "eba8cf324b45642b64d120e9d844c3dd737b07b3ecf20d158f470526fac7e6c6"
+        },
+        "win-x64": {
+          "name": "tree-sitter-tsx.dll",
+          "sha256": "7f4fe6e78ab4b22115be4930ad79353c956d264c4a033e2574ed1e6374582258"
+        }
+      }
+    },
+    "hcl": {
+      "upstream": "MichaHoffmann/tree-sitter-hcl",
+      "tag": "v1.2.0",
+      "commit": "fad9918",
+      "license": "Apache-2.0",
+      "languageVersion": 15,
+      "files": {
+        "linux-x64": {
+          "name": "libtree-sitter-hcl.so",
+          "sha256": "fa15c8d2f19f393adafc7f12eb9f523a53ec6a30ba97e75f8b9e60835fe91964"
+        },
+        "win-x64": {
+          "name": "tree-sitter-hcl.dll",
+          "sha256": "b0b80fb5bc12b717874ea89ac3d778a0f93b55ba29fd9c284f795f1377b5fde3"
+        }
+      }
+    }
+  },
+  "rids": [
+    "linux-x64",
+    "win-x64"
+  ]
+}

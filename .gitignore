@@ -6,6 +6,9 @@ obj/
 *.dll
 *.pdb
 
+# 独自ビルドの tree-sitter grammar（ビルド成果物ではなく配布物。native/README.md 参照）
+!native/*/*.dll
+
 # NuGet
 *.nupkg
 packages/

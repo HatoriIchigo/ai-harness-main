@@ -47,6 +47,18 @@ dotnet publish ai-harness-main\ai-harness-main\ai-harness-main.csproj `
   -o <インストール先>
 ```
 
+発行対象 RID に対応する `native/<rid>/` があれば、自前ビルドの tree-sitter native（`libtree-sitter`
+本体と全 grammar）と `versions.json` が publish 出力の `runtimes/` へ自動的に配られる（単一ファイルには
+含めず実ファイルとして残す）。収録物とビルド手順は `native/README.md` を参照。
+**`--update` の自己更新でも、実行体と一緒に `runtimes/` と `resources/` が同期される**
+（内容が同一のファイルはスキップするため、版を上げていない更新では何も書き換わらない）。
+
+```sh
+# 配られたか確認
+ls <インストール先>/runtimes/linux-x64/native/
+ai-harness-main --doctor   # native (tree-sitter) の行でロード可能な個数を確認
+```
+
 ### RID 早見表
 
 | OS / アーキテクチャ | RID |
@@ -70,7 +82,9 @@ dotnet publish ai-harness-main\ai-harness-main\ai-harness-main.csproj `
 ├── lib/                        共有プラグイン（*.dll。マネージド依存 TreeSitter.dll 等も同居）
 ├── config/                     本体設定（plugins.yml＝プラグインのインストール定義／daemon.yml＝daemon の寿命）
 ├── resources/                  プロジェクトへ配る既定テンプレート（common.yml・phase.yml）
-├── runtimes/                   tree-sitter ネイティブ grammar（<rid>/native/*.dll）。host が起動時に事前ロード
+├── runtimes/                   tree-sitter ネイティブ（<rid>/native/*）。host が起動時に事前ロード
+│                               自前ビルドの libtree-sitter 本体＋全 grammar（native/ から publish が配る）
+│                               versions.json＝版の一元宣言（doctor が照合）
 ├── run/                        daemon 作業領域（daemon.lock、自動生成）
 └── logs/                       daemon ライフサイクルログ（自動生成）
 
@@ -109,7 +123,12 @@ ai-harness-main --plugin <プロジェクト> --enable <PluginName>
 
 native の入手経路は使用者が置くもの（host と `lib/` のプラグイン DLL）に限られる。使用者に `runtimes/` を触らせない・winget を前提にしない・既定リリースを汚さない、を満たすため次で固定する。
 
-1. **既定リリースに native を同梱してよいのは tree-sitter のみ。** 汎用（どの tree-sitter プラグインでも同一）の first-party 依存なので、host のリリース zip に `runtimes/<rid>/native/` として封入する。tree-sitter プラグインの配布物は `lib/` のマネージド DLL のみ。同梱 native の版はプラグインが参照する `TreeSitter.dll`（現状 `TreeSitter.DotNet 1.3.0`）と一致させる。
+1. **tree-sitter の native は自前ビルドしてこのリポジトリで配布する。** `libtree-sitter` 本体と全 grammar のビルド済みバイナリを `native/<rid>/` に置き、`ai-harness-main.csproj` が発行対象 RID のものだけを publish 出力の `runtimes/<rid>/native/` へ配る（`Content` ＋ `ExcludeFromSingleFile`。RID ディレクトリが無ければ何も配らずビルドは成功する）。tree-sitter プラグインの配布物は `lib/` のマネージド DLL のみ。
+
+   - **NuGet の `TreeSitter.DotNet` は C# バインディング（`TreeSitter.dll`）としてのみ使い、その native は使わない。** 単一ファイル発行（`IncludeNativeLibrariesForSelfExtract=true`）では NuGet 由来の native が exe に吸われ `runtimes/<rid>/native/` に出ないため（実測）、`Content` で配れるリポジトリ同梱に統一する。使用者側の環境に入るのは dotnet だけという前提のうえで、発行・`--update` の経路が 1 本で済む。
+   - **版は `native/versions.json` が単一の真実。** upstream の tag / commit / ライセンス / `LANGUAGE_VERSION` / RID 別 sha256 を持ち、`native/build-native.sh` が再計算して書き戻す。`--update` で本体を更新すると native も一緒に届くが、**版が動くのはこのリポジトリで tag を上げたコミットだけ**（upstream の最新に勝手に追従することはない）。
+   - **対応 RID は `linux-x64` / `win-x64`。macOS は対象外。** ビルド手順・収録 grammar・増やし方は `native/README.md`。
+   - `--doctor` は `runtimes/<rid>/native/` の全ファイルをロードして数を報告し、あわせて `runtimes/versions.json` と照合して **native の欠落**と **`lib/TreeSitter.dll` との版不一致**を warn で報告する。プラグイン側の使い方は `new Language("<id>")`。
 
 2. **それ以外の native は既定リリースに一切含めない**（host にも `lib/` にも置かない）。使用者は `runtimes/` を触らない（追加不可）。ただし**プログラム（host）が `runtimes/` を書き換えるのは可**。
 

@@ -9,8 +9,8 @@
     <RootNamespace>ai_harness_main</RootNamespace>
     <AssemblyName>ai-harness-main</AssemblyName>
     <!-- 数値版は SemVer 準拠が必須（AssemblyVersion に解析される）。1.0.0 で安定版とし、α 表記は外した。 -->
-    <Version>1.2.4</Version>
-    <InformationalVersion>1.2.4</InformationalVersion>
+    <Version>1.3.0</Version>
+    <InformationalVersion>1.3.0</InformationalVersion>
     <InvariantGlobalization>true</InvariantGlobalization>
     <!-- bridge モードは hook ごとに起動されるため起動速度を優先。 -->
     <PublishReadyToRun>true</PublishReadyToRun>
@@ -27,6 +27,27 @@
   <ItemGroup>
     <!-- プロジェクトへコピーする既定ファイル（phase.yml 等）。実行体隣の resources/ に配置する。 -->
     <Content Include="resources\**" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(RuntimeIdentifier)' != '' AND Exists('..\native\$(RuntimeIdentifier)')">
+    <!-- 自前ビルドの tree-sitter native（libtree-sitter 本体と全 grammar）。発行対象 RID のものだけを
+         実行体隣の runtimes/<rid>/native/ へ配る。host が起動時にフルパスで事前ロードする
+         （Program.PreloadNativeLibraries）。単一ファイル発行でも実ファイルとして残す必要があるため
+         ExcludeFromSingleFile を立てる。詳細は ../native/README.md。 -->
+    <Content Include="..\native\$(RuntimeIdentifier)\*">
+      <Link>runtimes\$(RuntimeIdentifier)\native\%(Filename)%(Extension)</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+      <ExcludeFromSingleFile>true</ExcludeFromSingleFile>
+    </Content>
+    <!-- 版の一元宣言。doctor モードが読んで native の欠落と管理 DLL との版不一致を診断する。
+         native ディレクトリの中には置かない（事前ロードが全ファイルを NativeLibrary.Load するため）。 -->
+    <Content Include="..\native\versions.json">
+      <Link>runtimes\versions.json</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+      <ExcludeFromSingleFile>true</ExcludeFromSingleFile>
+    </Content>
   </ItemGroup>
 
 </Project>
