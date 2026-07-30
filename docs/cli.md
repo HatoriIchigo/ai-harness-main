@@ -57,9 +57,10 @@ ai-harness-main [モード] [オプション]
 プロジェクトへのハーネス配線を自動化する。プロジェクト無指定は cwd から解決する
 （`.claude` が見つからなければ cwd 自体を配線先にする＝新規プロジェクトの初期化）。
 
-1. `.claude/settings.json` に `ai-harness-main` を呼ぶ `PreToolUse`／`PostToolUse` hook を追記する。
-   既存の設定（他ツールの hook・`permissions` 等）は保持し、追記のみ行う。いずれかのイベントに既に
-   `ai-harness-main` を呼ぶ hook があれば、そのイベントには触れない（配線済み）。
+1. `.claude/settings.json` に `ai-harness-main` を呼ぶ `SessionStart`／`PreToolUse`／`PostToolUse` hook を
+   追記する。既存の設定（他ツールの hook・`permissions` 等）は保持し、追記のみ行う。いずれかのイベントに既に
+   `ai-harness-main` を呼ぶ hook があれば、そのイベントには触れない（配線済み）。`SessionStart` は
+   プラグインの発火に加えて rule／skill の配布契機を兼ねる（下記 4.）。
 2. `lib/` にインストール済みのプラグインを一覧にし、有効化するものを対話的に選ばせる
    （↑/↓ か j/k（vim 風）で移動、space でチェック切替、Enter で確定、Esc／q で中止＝選択なし）。標準入出力が
    リダイレクトされている（パイプ・CI 等、矢印キー入力を受けられない）場合は、カンマ区切りの番号
@@ -68,8 +69,12 @@ ai-harness-main [モード] [オプション]
 3. 選んだプラグインを `--plugin --enable` と同じ経路（デフォルト設定 YAML の配置・フェイルクローズ検証・
    `common.yml` の `tools` への書き込み）で有効化する。有効化がフェイルクローズを招く場合は、
    `common.yml` を書き換えずに拒否する（`--plugin --enable` と同じ安全策）。
+4. 有効化したプラグインが同梱する rule／skill を `.claude/rules`／`.claude/skills` へ配布する。実行時の
+   配布契機は `SessionStart` hook だが、1. で配線したばかりの hook が効くのは次のセッション以降。導入直後の
+   最初のセッションから Claude が skill を認識できるよう、セッションと無関係なこのタイミングで置いておく。
+   既存ファイルと内容が一致する分は書き換えない（更新時刻を動かさず git 差分を出さない）。
 
-選ぶプラグインが 0 件なら `common.yml` には触れない。`--no-plugins` を付けると 2.／3. を丸ごと飛ばし、
+選ぶプラグインが 0 件なら `common.yml` には触れない。`--no-plugins` を付けると 2.／3.／4. を丸ごと飛ばし、
 settings.json への配線だけで終える（`--enable` との同時指定は矛盾するため拒否する）。
 
 ```sh

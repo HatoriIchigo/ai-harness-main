@@ -5,7 +5,11 @@ namespace ai_harness_main;
 
 /// <summary>
 /// <c>&lt;プロジェクトルート&gt;/.claude/settings.json</c> に、<c>ai-harness-main</c> を叩く
-/// <c>PreToolUse</c>／<c>PostToolUse</c> hook を追記する（<c>--init</c> の実体の一部）。
+/// <c>SessionStart</c>／<c>PreToolUse</c>／<c>PostToolUse</c> hook を追記する（<c>--init</c> の実体の一部）。
+///
+/// <c>SessionStart</c> はプラグインの発火に加えて rule/skill の配布契機を兼ねる
+/// （<see cref="ResourceDistributor"/>）。Claude Code はセッション初期化時に skill を走査するため、
+/// この配線が無いと配布がツール使用時まで遅れ、その回のセッションには載らない。
 ///
 /// 既存の設定（他ツールの hook・permissions 等）は保持し、追記のみ行う。各イベントについて、
 /// 既に <c>command</c> が <c>ai-harness-main</c> の hook エントリがあれば「配線済み」とみなし、
@@ -14,13 +18,16 @@ namespace ai_harness_main;
 internal static class SettingsJsonEditor
 {
     private const string HookCommand = "ai-harness-main";
-    private static readonly string[] HookEvents = ["PreToolUse", "PostToolUse"];
+
+    /// <summary>配線するイベント。既に配線済みのイベントは飛ばすため、順序は新規作成時の出力順のみに効く。</summary>
+    public static readonly string[] HookEvents = ["SessionStart", "PreToolUse", "PostToolUse"];
 
     /// <summary>
     /// <paramref name="projectRoot"/> の <c>.claude/settings.json</c> を確認・追記する。
-    /// 戻り値の <c>Changed</c> は実際にファイルを書き換えたか（既に配線済みなら <c>false</c>）。
+    /// 戻り値の <c>Added</c> は今回追記したイベント名（既に全て配線済みなら空＝ファイルは書き換えない）。
+    /// 一部のイベントだけ配線済みの既存プロジェクトもあるため、「追記したもの」だけを返す。
     /// </summary>
-    public static (bool Changed, string? Error) EnsureHooks(string projectRoot)
+    public static (IReadOnlyList<string> Added, string? Error) EnsureHooks(string projectRoot)
     {
         var claudeDir = Path.Combine(projectRoot, ".claude");
         var path = Path.Combine(claudeDir, "settings.json");
@@ -34,7 +41,7 @@ internal static class SettingsJsonEditor
         }
         catch (Exception ex)
         {
-            return (false, $"settings.json の解析に失敗（壊れているため自動編集できません）: {ex.Message}");
+            return ([], $"settings.json の解析に失敗（壊れているため自動編集できません）: {ex.Message}");
         }
 
         if (root["hooks"] is not JsonObject hooks)
@@ -43,7 +50,7 @@ internal static class SettingsJsonEditor
             root["hooks"] = hooks;
         }
 
-        var changed = false;
+        var added = new List<string>();
         foreach (var eventName in HookEvents)
         {
             if (hooks[eventName] is not JsonArray matcherEntries)
@@ -65,12 +72,12 @@ internal static class SettingsJsonEditor
                     new JsonObject { ["type"] = "command", ["command"] = HookCommand },
                 },
             });
-            changed = true;
+            added.Add(eventName);
         }
 
-        if (!changed)
+        if (added.Count == 0)
         {
-            return (false, null);
+            return ([], null);
         }
 
         try
@@ -83,10 +90,10 @@ internal static class SettingsJsonEditor
         }
         catch (Exception ex)
         {
-            return (false, $"settings.json の書き込みに失敗: {ex.Message}");
+            return ([], $"settings.json の書き込みに失敗: {ex.Message}");
         }
 
-        return (true, null);
+        return (added, null);
     }
 
     /// <summary><paramref name="matcherEntries"/>（1 イベント分）のどこかに <c>ai-harness-main</c> を叩く hook があるか。</summary>

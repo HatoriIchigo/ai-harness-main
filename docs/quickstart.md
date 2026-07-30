@@ -162,6 +162,9 @@ ai-harness-main --init --enable ai-harness-deny,ai-harness-git-commit
 ```json
 {
   "hooks": {
+    "SessionStart": [
+      { "matcher": "*", "hooks": [ { "type": "command", "command": "ai-harness-main" } ] }
+    ],
     "PreToolUse": [
       { "matcher": "*", "hooks": [ { "type": "command", "command": "ai-harness-main" } ] }
     ],
@@ -171,6 +174,10 @@ ai-harness-main --init --enable ai-harness-deny,ai-harness-git-commit
   }
 }
 ```
+
+`SessionStart` はプラグインの発火に加えて、プラグインが同梱する rule／skill を
+`.claude/rules`／`.claude/skills` へ配布する契機を兼ねる。Claude Code は skill をセッション初期化時に
+走査するため、この配線を外すと配布がツール使用時まで遅れ、その回のセッションでは skill が認識されない。
 
 `common.yml` の `tools` は `PluginName`（DLL 名ではない）をキーにした真偽値のリスト。
 

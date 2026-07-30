@@ -6,14 +6,17 @@ namespace ai_harness_main;
 /// （<c>--enable</c> との同時指定は矛盾するため拒否する）。
 ///
 /// <list type="number">
-///   <item><c>.claude/settings.json</c> に <c>ai-harness-main</c> の <c>PreToolUse</c>／<c>PostToolUse</c>
-///     hook を追記する（<see cref="SettingsJsonEditor"/>。既に配線済みなら変更しない）。</item>
+///   <item><c>.claude/settings.json</c> に <c>ai-harness-main</c> の <c>SessionStart</c>／<c>PreToolUse</c>／
+///     <c>PostToolUse</c> hook を追記する（<see cref="SettingsJsonEditor"/>。既に配線済みなら変更しない）。</item>
 ///   <item>有効化するプラグインを選ぶ。<c>--enable</c> があればそれを使い、無ければ <c>lib/</c> の
 ///     インストール済み一覧から対話的に選ばせる（矢印キーまたは j/k で移動・space で選択切替・
 ///     Enter で確定。標準入出力がリダイレクトされている場合はカンマ区切りの番号入力にフォールバックする）。</item>
 ///   <item>選んだプラグインを <c>common.yml</c> の <c>tools</c> へ書き込む。発見・デフォルト設定配置・
 ///     フェイルクローズ検証・書き込みは <c>--plugin --enable</c>（<see cref="PluginsCommand"/>）と
 ///     完全に同じ経路を通す（二重実装しない）。</item>
+///   <item>有効化したプラグインの rule／skill を <c>.claude/rules</c>／<c>.claude/skills</c> へ配布する
+///     （<see cref="ResourceDistributor"/>）。実行時の配布契機は <c>SessionStart</c> hook だが、そこに頼ると
+///     ハーネス導入後の最初のセッションで間に合わない可能性があるため、配線と同時にここで置いておく。</item>
 /// </list>
 ///
 /// プロジェクト無指定は cwd から解決する（<c>.claude</c> が無ければ cwd 自体を新規プロジェクトルートとする）。
@@ -44,14 +47,14 @@ internal static class InitCommand
         Console.Out.WriteLine($"project: {root}");
         Console.Out.WriteLine();
 
-        var (settingsChanged, settingsError) = SettingsJsonEditor.EnsureHooks(root);
+        var (settingsAdded, settingsError) = SettingsJsonEditor.EnsureHooks(root);
         if (settingsError is not null)
         {
             await Console.Error.WriteLineAsync(settingsError).ConfigureAwait(false);
             return 1;
         }
-        Console.Out.WriteLine(settingsChanged
-            ? "settings.json: ai-harness-main の hook を追加しました（PreToolUse／PostToolUse）。"
+        Console.Out.WriteLine(settingsAdded.Count > 0
+            ? $"settings.json: ai-harness-main の hook を追加しました（{string.Join("／", settingsAdded)}）。"
             : "settings.json: 既に ai-harness-main が配線済みです（変更なし）。");
 
         if (options.NoPlugins)
@@ -122,6 +125,18 @@ internal static class InitCommand
         foreach (var result in results)
         {
             Console.Out.WriteLine($"  有効化: {result.PluginName}");
+        }
+
+        // rule/skill を今この場で配布する。実行時の配布契機は SessionStart hook だが、上で settings.json へ
+        // 配線したばかりなので、その hook が効くのは次のセッション以降。導入直後の最初のセッションから
+        // Claude が skill を認識できるよう、セッションと無関係なこのタイミングで置いておく。
+        Console.Out.WriteLine();
+        var distributed = ResourceDistributor.Distribute(
+            registry.Types, root, selected.ToHashSet(StringComparer.Ordinal),
+            entry => Console.Out.WriteLine($"  {entry.Message}"));
+        if (distributed.Count == 0)
+        {
+            Console.Out.WriteLine("  rule/skill: 配布対象なし（同梱するプラグインが無いか、既に最新）。");
         }
 
         Console.Out.WriteLine();

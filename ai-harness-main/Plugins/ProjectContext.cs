@@ -63,11 +63,10 @@ internal sealed class ProjectContext : IDisposable
             logger.Write(LogLevel.Warning, warning);
         }
 
-        // 登録（初回活性化）時のみ rule/skill を配置する。宛先はこのプロジェクトの .claude/rules・.claude/skills。
-        // Reload / --validate は copyRulesTo/copySkillsTo を渡さない（配置しない）。
-        var rulesDir = Path.Combine(projectRoot, ".claude", "rules");
-        var skillsDir = Path.Combine(projectRoot, ".claude", "skills");
-        var validation = ValidateAndInit(registry.Types, config, logger.Emit, rulesDir, skillsDir);
+        var validation = ValidateAndInit(registry.Types, config, logger.Emit);
+        // rule/skill の配布。本来の契機は SessionStart hook と --init（ResourceDistributor 参照）で、ここは
+        // そのどちらも通っていないプロジェクトの保険。冪等なので重複しても書き込みは発生しない。
+        ResourceDistributor.Distribute(validation.ValidTypes, projectRoot, onlyNames: null, logger.Emit);
         // state ストアは設定ホットリロード（有効プラグイン再構築）とは独立に 1 つ保持する。
         var stateStore = StateStore.Create(projectRoot, globalLog);
 
@@ -116,6 +115,16 @@ internal sealed class ProjectContext : IDisposable
             logger.WriteDeny(new DenyEvent(
                 "claude", DenyKind.FailClose, reason, data.ToolName, data.HookEventName));
             return new HostDecision(2, reason);
+        }
+
+        // rule/skill の配布。Claude Code は skill をセッション初期化時に走査するため、ツール使用時
+        // （PreToolUse 等）に配布してもその回のセッションには載らない。SessionStart より前に走る hook は
+        // 無いので、実行時の配布はここが最速の契機。プラグイン発火より前・応答を返す前に同期で完了させる。
+        // このプロジェクトが daemon に展開済みでも（＝Create を通らなくても）毎回走らせる必要がある
+        // ため、Create 時の配布とは独立に呼ぶ。冪等なので内容が同じなら書き込みは発生しない。
+        if (data.Event == HookEvent.SessionStart)
+        {
+            ResourceDistributor.Distribute(validation.ValidTypes, ProjectRoot, onlyNames: null, logger.Emit);
         }
 
         // state 全体を読み取り用に注入（発火時点のスナップショット。共有参照ゆえプラグインは書き換えない）。
@@ -208,15 +217,11 @@ internal sealed class ProjectContext : IDisposable
     /// ログの宛先は <paramref name="log"/>。<c>--validate</c> から呼ぶときはログを捨てられるよう
     /// <see cref="Logger"/> ではなくデリゲートを取る（検証がプロジェクトのログを汚さないため）。
     ///
-    /// <paramref name="copyRulesTo"/> / <paramref name="copySkillsTo"/> が非 null のとき、有効化・Init 済みの
-    /// 各プラグインの <see cref="PluginBase.CopyRule"/> / <see cref="PluginBase.CopySkill"/> をそれぞれの
-    /// ディレクトリへ実行し rule・skill を配置する（<c>Create</c> のみ渡す。<c>Reload</c> / <c>--validate</c> は
-    /// null＝配置しない）。配置は hook のゲートではないため、失敗しても検証結果には影響させず
-    /// warning ログに留める（フェイルオープン）。
+    /// rule・skill の配布はここでは行わない（<see cref="ResourceDistributor"/> の責務）。この検証は
+    /// <c>--validate</c> / <c>--plugin --enable</c> からも呼ばれるため、副作用でファイルを配置してはならない。
     /// </summary>
     public static StartupValidation ValidateAndInit(
-        IReadOnlyList<Type> types, ProjectConfig config, Action<LogEntry> log,
-        string? copyRulesTo = null, string? copySkillsTo = null)
+        IReadOnlyList<Type> types, ProjectConfig config, Action<LogEntry> log)
     {
         var toolToggles = config.ToolToggles;
         // パス 2（相互検証）で設定ロード済みインスタンスを再利用するため、型と一緒に保持する。
@@ -296,39 +301,6 @@ internal sealed class ProjectContext : IDisposable
             }
 
             log(LogEntry.Info("起動しました") with { Source = name });
-
-            // rule 配布（copyRulesTo は Create のときのみ非 null）。hook のゲートではないので、
-            // 失敗しても検証を止めず warning に留める（フェイルオープン）。
-            if (copyRulesTo is not null)
-            {
-                try
-                {
-                    foreach (var written in plugin.CopyRule(copyRulesTo))
-                    {
-                        log(LogEntry.Info($"rule を配置: {written}") with { Source = name });
-                    }
-                }
-                catch (Exception ex)
-                {
-                    log(LogEntry.Warning($"rule 配置に失敗（継続）: {ex.Message}") with { Source = name });
-                }
-            }
-
-            // skill 配布（copySkillsTo は Create のときのみ非 null）。rule と同じくフェイルオープン。
-            if (copySkillsTo is not null)
-            {
-                try
-                {
-                    foreach (var written in plugin.CopySkill(copySkillsTo))
-                    {
-                        log(LogEntry.Info($"skill を配置: {written}") with { Source = name });
-                    }
-                }
-                catch (Exception ex)
-                {
-                    log(LogEntry.Warning($"skill 配置に失敗（継続）: {ex.Message}") with { Source = name });
-                }
-            }
 
             valid.Add((type, plugin));
         }

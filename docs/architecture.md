@@ -169,6 +169,28 @@ deny は集約されて Claude Code へ返るが、集約後の理由文字列�
 検証できなかった**として同じくブロックする。`tools: false`／未記載のプラグインは検証対象外（素通り）。
 設定を直せばホットリロードでコンテキストが再構築され、ブロックは解除される。
 
+## rule／skill の配布
+
+プラグインは自身が埋め込みリソースとして持つ rule（`ProvidesRule`）と skill（`ProvidesSkill`）を、有効化された
+プロジェクトの `.claude/rules`／`.claude/skills` へ配布する。配布は Claude Code への案内文の配置であって hook の
+ゲートではないため、失敗はブロックにせず警告ログに留める（フェイルオープン）。
+
+**契機が重要**。Claude Code は skill をセッション初期化時にディスク走査して一覧化するので、ツール使用時
+（`PreToolUse` 等）に配布しても**その回のセッションには載らない**。ユーザーの入力より前にファイルが揃って
+いる必要がある。`SessionStart` より前に走る hook は存在しないため、実行時の配布契機はそこが最速。
+
+| 契機 | 位置 | 役割 |
+|---|---|---|
+| `SessionStart` hook | `ProjectContext.RunAsync`（プラグイン発火より前・応答を返す前に同期完了） | 実行時の本命。プロジェクトが daemon に展開済みかどうかに関わらず毎回走る |
+| `--init` | `InitCommand` | 配線と同時に配置。導入直後の最初のセッションから載せる |
+| プロジェクト初回活性化 | `ProjectContext.Create` | 上記 2 つを通っていないプロジェクトの保険 |
+
+実装は `ResourceDistributor` に一本化する。`ValidateAndInit` は配布しない（`--validate`／`--plugin --enable`
+からも呼ばれるため、検証の副作用でファイルを置いてはならない）。
+
+配布は冪等。既存ファイルと内容が一致する分は書き換えないため、セッション開始ごとに走っても更新時刻は動かず、
+プロジェクトの git 差分にノイズが出ない。
+
 ## ホットリロード
 
 各 `ProjectContext` は自身の設定ディレクトリ（`<ルート>/.claude/harness/config`）の `*.yml` を `FileSystemWatcher` で監視する。
@@ -192,7 +214,7 @@ Claude Code 終了後に daemon が居座らないよう、2 段で回収する�
 2. bridge が cwd から `.claude` を上方探索してプロジェクトルートを解決
 3. bridge が名前付きパイプで daemon へ接続（未起動なら `--daemon` を detached 起動して再接続）
 4. bridge が封筒 `{ type, projectRoot, hookJson }` をフレーム送信
-5. daemon が `projectRoot` で `ProjectContext` を取得（初回は生成）、`HookData.Parse` で解析し `PluginHost` が全プラグインを並列発火（`maxParallel` で同時数制限）
+5. daemon が `projectRoot` で `ProjectContext` を取得（初回は生成）、`HookData.Parse` で解析し `PluginHost` が全プラグインを並列発火（`maxParallel` で同時数制限）。`SessionStart` のときは発火の前に rule／skill を配布する（[rule／skill の配布](#ruleskill-の配布)）
 6. 各 `PluginResult` を **deny 先勝ち**で集約（1 つでも `ExitCode != 0` なら全体 deny、理由を改行連結）
 7. daemon が `{ exitCode, reason, additionalContext }` を応答 → bridge が deny 理由を stderr、additionalContext を hook 出力 JSON で stdout、その exit code で終了
 
