@@ -69,19 +69,23 @@ ai-harness-main [モード] [オプション]
 3. 選んだプラグインを `--plugin --enable` と同じ経路（デフォルト設定 YAML の配置・フェイルクローズ検証・
    `common.yml` の `tools` への書き込み）で有効化する。有効化がフェイルクローズを招く場合は、
    `common.yml` を書き換えずに拒否する（`--plugin --enable` と同じ安全策）。
-4. 有効化したプラグインが同梱する rule／skill を `.claude/rules`／`.claude/skills` へ配布する。実行時の
-   配布契機は `SessionStart` hook だが、1. で配線したばかりの hook が効くのは次のセッション以降。導入直後の
-   最初のセッションから Claude が skill を認識できるよう、セッションと無関係なこのタイミングで置いておく。
-   既存ファイルと内容が一致する分は書き換えない（更新時刻を動かさず git 差分を出さない）。
+4. `common.yml` で有効なプラグインが同梱する rule／skill を `.claude/rules`／`.claude/skills` へ配布する。
+   実行時の配布契機は `SessionStart` hook だが、1. で配線したばかりの hook が効くのは次のセッション以降。
+   導入直後の最初のセッションから Claude が skill を認識できるよう、セッションと無関係なこのタイミングで
+   置いておく。既存ファイルと内容が一致する分は書き換えない（更新時刻を動かさず git 差分を出さない）。
 
-選ぶプラグインが 0 件なら `common.yml` には触れない。`--no-plugins` を付けると 2.／3.／4. を丸ごと飛ばし、
-settings.json への配線だけで終える（`--enable` との同時指定は矛盾するため拒否する）。
+   対象は**今回有効化した分に限らず、`common.yml` で有効な全プラグイン**。`--init` を再実行したときや
+   後述の `--no-plugins`／選択 0 件のときも、有効なプラグインの配布物が揃っている状態になる
+   （`SessionStart` 側の配布と対象を揃えるため）。
+
+選ぶプラグインが 0 件なら `common.yml` には触れない（4. の配布は行う）。`--no-plugins` を付けると 2.／3. を
+飛ばし、settings.json への配線と 4. の配布で終える（`--enable` との同時指定は矛盾するため拒否する）。
 
 ```sh
 ai-harness-main --init                                              # cwd、対話選択
 ai-harness-main --init C:\Users\project1                            # プロジェクト指定、対話選択
 ai-harness-main --init --enable ai-harness-deny,ai-harness-git-commit  # 選択済み一覧を渡す
-ai-harness-main --init --no-plugins                                 # settings.json の配線のみ
+ai-harness-main --init --no-plugins                                 # 配線と rule/skill の配布のみ
 ```
 
 ## daemon 制御

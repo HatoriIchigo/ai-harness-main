@@ -2,8 +2,8 @@ namespace ai_harness_main;
 
 /// <summary>
 /// <c>--init [プロジェクト] [--enable 名,…] [--no-plugins]</c>: 新規／既存プロジェクトへのハーネス配線を自動化する。
-/// <c>--no-plugins</c> を付けると下記 2.／3. を丸ごと飛ばし、settings.json への配線のみで終える
-/// （<c>--enable</c> との同時指定は矛盾するため拒否する）。
+/// <c>--no-plugins</c> を付けると下記 2.／3.（プラグインの選択と有効化）を飛ばす。4. の配布は
+/// <c>common.yml</c> の既存の有効プラグインを対象に実行する（<c>--enable</c> との同時指定は矛盾するため拒否する）。
 ///
 /// <list type="number">
 ///   <item><c>.claude/settings.json</c> に <c>ai-harness-main</c> の <c>SessionStart</c>／<c>PreToolUse</c>／
@@ -14,9 +14,10 @@ namespace ai_harness_main;
 ///   <item>選んだプラグインを <c>common.yml</c> の <c>tools</c> へ書き込む。発見・デフォルト設定配置・
 ///     フェイルクローズ検証・書き込みは <c>--plugin --enable</c>（<see cref="PluginsCommand"/>）と
 ///     完全に同じ経路を通す（二重実装しない）。</item>
-///   <item>有効化したプラグインの rule／skill を <c>.claude/rules</c>／<c>.claude/skills</c> へ配布する
-///     （<see cref="ResourceDistributor"/>）。実行時の配布契機は <c>SessionStart</c> hook だが、そこに頼ると
-///     ハーネス導入後の最初のセッションで間に合わない可能性があるため、配線と同時にここで置いておく。</item>
+///   <item><c>common.yml</c> で有効なプラグイン（今回有効化した分に限らない）の rule／skill を
+///     <c>.claude/rules</c>／<c>.claude/skills</c> へ配布する（<see cref="DistributeEnabled"/>）。実行時の
+///     配布契機は <c>SessionStart</c> hook だが、1. で配線した hook が効くのは次のセッション以降のため、
+///     導入直後の最初のセッションから載せるには配線と同時にここで置く必要がある。</item>
 /// </list>
 ///
 /// プロジェクト無指定は cwd から解決する（<c>.claude</c> が無ければ cwd 自体を新規プロジェクトルートとする）。
@@ -57,15 +58,20 @@ internal static class InitCommand
             ? $"settings.json: ai-harness-main の hook を追加しました（{string.Join("／", settingsAdded)}）。"
             : "settings.json: 既に ai-harness-main が配線済みです（変更なし）。");
 
+        // 配布（下記 DistributeEnabled）は common.yml の有効プラグインを対象にするため、プラグインを
+        // 選ばせない経路（--no-plugins・選択 0 件）でも型一覧が要る。分岐より前に発見しておく。
+        var (registry, plugins) = PluginsCommand.Discover();
+
         if (options.NoPlugins)
         {
             Console.Out.WriteLine();
             Console.Out.WriteLine("--no-plugins が指定されたため、プラグインの選択は行いません。");
-            Console.Out.WriteLine("初期化が完了しました（settings.json の配線のみ）。");
+            DistributeEnabled(root, registry);
+            Console.Out.WriteLine();
+            Console.Out.WriteLine("初期化が完了しました（settings.json の配線と rule/skill の配布）。");
             return 0;
         }
 
-        var (registry, plugins) = PluginsCommand.Discover();
         if (plugins.Count == 0)
         {
             Console.Out.WriteLine();
@@ -82,6 +88,8 @@ internal static class InitCommand
         {
             Console.Out.WriteLine();
             Console.Out.WriteLine("有効化するプラグインが選ばれなかったため、common.yml は変更しません。");
+            // 今回何も有効化しなくても、既に有効なプラグインの配布物は揃えておく。
+            DistributeEnabled(root, registry);
             return 0;
         }
 
@@ -127,21 +135,46 @@ internal static class InitCommand
             Console.Out.WriteLine($"  有効化: {result.PluginName}");
         }
 
-        // rule/skill を今この場で配布する。実行時の配布契機は SessionStart hook だが、上で settings.json へ
-        // 配線したばかりなので、その hook が効くのは次のセッション以降。導入直後の最初のセッションから
-        // Claude が skill を認識できるよう、セッションと無関係なこのタイミングで置いておく。
-        Console.Out.WriteLine();
-        var distributed = ResourceDistributor.Distribute(
-            registry.Types, root, selected.ToHashSet(StringComparer.Ordinal),
-            entry => Console.Out.WriteLine($"  {entry.Message}"));
-        if (distributed.Count == 0)
-        {
-            Console.Out.WriteLine("  rule/skill: 配布対象なし（同梱するプラグインが無いか、既に最新）。");
-        }
+        DistributeEnabled(root, registry);
 
         Console.Out.WriteLine();
         Console.Out.WriteLine("初期化が完了しました。Claude Code を再起動すると hook の配線が反映されます。");
         return 0;
+    }
+
+    /// <summary>
+    /// <c>common.yml</c> で有効になっているプラグインの rule／skill を配布する（<see cref="ResourceDistributor"/>）。
+    ///
+    /// 対象は「今回有効化した分」ではなく<b>有効な全プラグイン</b>。<c>--init</c> を再実行したときや
+    /// <c>--no-plugins</c>／選択 0 件のときも、既に有効なプラグインの配布物が揃っている状態にするため
+    /// （実行時の配布契機である <c>SessionStart</c> hook も有効プラグイン全体を対象にしており、そこと揃える）。
+    ///
+    /// 配布は hook のゲートではないので、失敗しても <c>--init</c> は続ける（理由は個別に表示される）。
+    /// </summary>
+    private static void DistributeEnabled(string root, PluginRegistry registry)
+    {
+        // 直前に CommonYamlEditor が書き換えている可能性があるため、ここで読み直した状態を対象にする。
+        var config = ProjectConfig.Load(root, out _);
+        var enabled = config.ToolToggles.Where(kv => kv.Value)
+                                        .Select(kv => kv.Key)
+                                        .ToHashSet(StringComparer.Ordinal);
+
+        Console.Out.WriteLine();
+        if (enabled.Count == 0)
+        {
+            Console.Out.WriteLine("rule/skill: 有効なプラグインが無いため配布しません。");
+            return;
+        }
+
+        var distributed = ResourceDistributor.Distribute(
+            registry.Types, root, enabled,
+            entry => Console.Out.WriteLine(entry.Source is null
+                ? $"  {entry.Message}"
+                : $"  {entry.Source}: {entry.Message}"));
+        if (distributed.Count == 0)
+        {
+            Console.Out.WriteLine("rule/skill: 配布対象なし（同梱するプラグインが無いか、既に最新）。");
+        }
     }
 
     /// <summary>
