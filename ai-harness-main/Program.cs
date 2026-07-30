@@ -19,12 +19,13 @@ namespace ai_harness_main;
 ///   --update     … config/plugins.yml に従い拡張プラグインを repos/ へ clone／build し lib/ へ配置し、
 ///                  続けて本体自身も tmp へ publish して置換（自己更新）。git／dotnet 未導入なら異常終了（非 0）。
 ///   --update &lt;plugin name&gt; … その 1 プラグインのみ更新（clone／build／配置＋daemon 再起動）。本体自己更新はしない。
+///   --update self … 本体のみ更新（tmp へ clone／publish して置換）。プラグインと lib/ には触れない。
 ///   --apply-update … 内部モード（ユーザ非公開）。--update が publish した tmp の新バイナリから起動され、
 ///                  インストール先の実行体を安全に置換する。
 ///   --health     … 起動検証用。ランタイムが正常起動できれば 0 を返す（自己更新のロールバック判定に使う）。
 ///
 ///   --init [プロジェクト] … 新規／既存プロジェクトへの配線を自動化する。.claude/settings.json に
-///                  ai-harness-main の PreToolUse／PostToolUse hook を追記し（配線済みなら変更なし）、
+///                  ai-harness-main の SessionStart／PreToolUse／PostToolUse hook を追記し（配線済みなら変更なし）、
 ///                  有効化するプラグインを選ばせ（<c>--enable 名,…</c> があればそれを使う）、
 ///                  common.yml の tools へ書き込む（プロジェクト無指定は cwd から解決）。
 ///                  <c>--no-plugins</c> を付けるとプラグイン選択を丸ごと飛ばし、settings.json への
@@ -105,8 +106,9 @@ public static class Program
 
             case "--update":
             {
-                // 位置引数は更新対象プラグイン名 1 個（省略時は全プラグイン＋本体自己更新）。
-                if (!TryParseSingleOptionalName(args, "プラグイン", out var pluginName, out var updateError))
+                // 位置引数は更新対象 1 個（省略時は全プラグイン＋本体自己更新。
+                // PluginInstaller.SelfTargetName＝self なら本体のみ）。
+                if (!TryParseSingleOptionalName(args, "更新対象", out var pluginName, out var updateError))
                 {
                     await Console.Error.WriteLineAsync(updateError).ConfigureAwait(false);
                     await Console.Error.WriteLineAsync(Usage.Text).ConfigureAwait(false);

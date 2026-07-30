@@ -26,6 +26,7 @@ ai-harness-main [モード] [オプション]
 | [`--standalone`](#--standalone) | daemon を介さず stdin を 1 件処理して終了する | 0=許可 / 2=deny |
 | [`--update`](#--update) | 全プラグインと本体を更新する | 0 / 非 0 |
 | [`--update <プラグイン名>`](#--update-プラグイン名) | 指定した 1 プラグインのみ更新する | 0 / 非 0 |
+| [`--update self`](#--update-self) | 本体のみ更新する（プラグインと lib には触れない） | 0 / 非 0 |
 | [`--validate`](#--validate-プロジェクト) | 設定で hook が通る状態か検証する | 0=成功 / 1=失敗 |
 | [`--doctor`](#--doctor) | この配置でハーネスが機能するか診断する | 0=致命的問題なし / 1=error あり |
 | [`--project`](#--project) | daemon がメモリに展開しているプロジェクト一覧 | 0 / 1=引数エラー |
@@ -145,6 +146,24 @@ ai-harness-main --update ai-harness-file-rules
 - 本体（`ai-harness-main` 自身）の自己更新は**行わない**。
 - clone／build して `lib/` へ配置したあと、新しい DLL を反映するため稼働中の daemon を再起動する。
 - 名前が `plugins.yml` のどれとも一致しなければ、指定できる名前を示して異常終了（非 0）。
+- `self` は予約名（下記）。プラグイン名としては使えない。
+
+### `--update self`
+
+**本体（`ai-harness-main` 自身）だけ**を更新する。プラグインの clone／build と `lib/` の配置は一切行わない。
+
+```sh
+ai-harness-main --update self
+```
+
+- `plugins.yml` の `self` エントリから tmp へ clone し、self-contained single-file で publish して実行体を置換する
+  （置換の手順・フェイルセーフは `--update` と同一。[self-update.md](self-update.md) 参照）。
+- publish に必要な baselib は tmp 側へ clone する。`repos/ai-harness-baselib` は使わない。
+- `lib/` を触らないため、プラグイン更新に伴う daemon 再起動は発生しない（置換の適用時に applier が
+  daemon を停止・再起動する）。
+- `plugins.yml` に `self` という名前のプラグインがあっても、本体更新として解釈する（予約名）。
+- `dotnet <dll>` 経由で起動している場合は置換対象の実行体を特定できないためスキップし、
+  「本体は更新していない」と表示して 0 で終わる。
 
 ### `--health`
 

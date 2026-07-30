@@ -22,13 +22,16 @@ internal static class Usage
         更新:
           --update                  全プラグインと本体を更新する
           --update <プラグイン名>   指定した 1 プラグインのみ更新する（本体自己更新はしない）
+          --update self             本体のみ更新する（プラグインと lib には触れない）
           --health                  起動検証（ランタイムが正常起動すれば 0）
 
         初期化:
           --init [プロジェクト] [--enable <名,…>] [--no-plugins]
                                     settings.json に hook を配線し、プラグインを選ばせて（--enable が
-                                    あればそれを使う）common.yml へ有効化する（無指定は cwd から解決）。
-                                    --no-plugins を付けるとプラグイン選択を飛ばし settings.json の配線のみ行う
+                                    あればそれを使う）common.yml へ有効化し、有効なプラグインの
+                                    rule／skill を .claude/rules・.claude/skills へ配布する
+                                    （無指定は cwd から解決）。--no-plugins を付けるとプラグイン選択を
+                                    飛ばし、配線と配布のみ行う
 
         検証:
           --validate [プロジェクト] 設定で hook が通る状態か確かめる（無指定は cwd から解決）。

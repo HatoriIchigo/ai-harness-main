@@ -17,6 +17,11 @@
 
 取得元は本体直下 `config/plugins.yml` に集約する（`self` / `baselib` / `plugins` の 3 節）。
 
+`--update self` は上図の **2. だけ**を実行する（1. を飛ばす）。本体のバグ修正だけを取り込みたいときに、
+プラグインの再 build・`lib/` の差し替えという副作用を伴わせないための入口。publish に必要な baselib は
+2. が tmp 側へ clone するため、`repos/ai-harness-baselib` は用意しない。`self` は予約名で、`plugins.yml` に
+同名のプラグインエントリがあっても本体更新として解釈する。
+
 ## なぜ 2 プロセスに分けるか
 
 **稼働中の実行ファイルは自分自身では置換できない。** 特に Windows は実行中 exe がロックされ上書き不可。Linux は rename で置換できるが、挙動を揃えるため両 OS ともハンドオフ方式に統一する。
@@ -31,7 +36,7 @@ applier は bat/sh ではなく**本体と同一コードベースの内部モ�
 
 1. **対象 exe の特定** — `Environment.ProcessPath`。`dotnet <dll>` 経由起動（ミュクサ）では置換すべき本体を特定できないため**スキップして `false`**。self-contained 単一ファイル発行の実行体でのみ自己更新する。
 2. **tmp へ取得** — `self` と `baselib` を tmp の**兄弟ディレクトリ**へ clone。本体 csproj も baselib を `..\..\ai-harness-baselib\...` と相対参照するため、この兄弟レイアウトが必須（プラグインと同じ理由）。
-3. **publish** — `dotnet publish -c Release -r <現在の RID> --self-contained true -p:PublishSingleFile=true` で `tmp/out` へ。配置先に .NET を要求しない現行方針に合わせる。
+3. **publish** — `dotnet publish -c Release -r <現在の RID> --self-contained true -p:PublishSingleFile=true` で `tmp/out` へ。配置先に .NET を要求しない現行方針に合わせる。出力は `PluginInstaller.RunBuildOrThrow` で捕捉し、成功時は `publish: 成功` だけを出す（親コンソールへ素通しすると dotnet CLI のターミナルロガーが有効になり、日本語ロケールで `31.4 秒後に 成功しました をビルド` のような語順の崩れた要約が出る）。失敗時のみ捕捉した生ログを出してから例外にする。
 4. **発行直後の健全性検証** — `tmp/out` の新バイナリを `--health` で起動確認。ここで落ちれば置換に**進まない**（壊れた本体を配らない第一の関門）。
 5. **ハンドオフ** — 新バイナリを `--apply-update --target <install exe> --pid <自分> --tmp <作業領域>` で detached 起動し、`Run` は `true` を返す。呼び出し元の `--update` はそのまま終了（ロック解放）。
 
@@ -78,6 +83,7 @@ Linux は rename での同期置換も可能だが、OS 差をなくすため両
 | モード | 公開 | 用途 |
 |---|---|---|
 | `--update` | ユーザ | プラグイン更新 ＋ 本体自己更新 |
+| `--update self` | ユーザ | 本体自己更新のみ（プラグインと `lib/` に触れない） |
 | `--apply-update` | 内部 | tmp の新バイナリが実行体を置換（`--update` が起動） |
 | `--health` | 検証用 | ランタイムが正常起動すれば 0。置換の健全性判定に使う |
 

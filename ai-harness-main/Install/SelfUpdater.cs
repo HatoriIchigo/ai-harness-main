@@ -59,11 +59,14 @@ internal static class SelfUpdater
         var outDir = Path.Combine(tmpRoot, "out");
         var rid = RuntimeInformation.RuntimeIdentifier;
         Console.WriteLine($"publish: {csproj} (rid={rid})");
-        PluginInstaller.RunOrThrow("dotnet",
+        // 出力を捕捉する RunBuildOrThrow を使う（dotnet のターミナルロガーを無効化させるため。
+        // 素通しにすると日本語ロケールで語順の崩れた要約が出る）。失敗時のみ生ログを見せる。
+        PluginInstaller.RunBuildOrThrow("dotnet",
         [
             "publish", csproj, "-c", "Release", "-r", rid, "--self-contained", "true",
             "-p:PublishSingleFile=true", "-p:IncludeNativeLibrariesForSelfExtract=true", "-o", outDir,
         ]);
+        Console.WriteLine("publish: 成功");
 
         var newExe = Path.Combine(outDir, exeName);
         if (!File.Exists(newExe))

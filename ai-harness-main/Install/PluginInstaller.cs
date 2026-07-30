@@ -8,7 +8,9 @@ namespace ai_harness_main;
 /// HEAD が動いていない（fetch しても差分が無い）プラグインは baselib 側にも変更が無ければ
 /// build・配置をスキップする（clone／fetch は変更検知のため毎回行う）。
 ///
-/// 本体（<c>ai-harness-main</c> 自身）の更新は対象外。拡張プラグインのみを扱う。
+/// 引数なしの <c>--update</c> は全プラグインを更新したうえで本体も自己更新する。
+/// <c>--update &lt;plugin name&gt;</c> はそのプラグインのみ、<c>--update self</c> は<b>本体のみ</b>を更新する
+/// （<see cref="SelfTargetName"/> は予約名。plugins.yml に同名のエントリがあっても本体更新として解釈する）。
 /// 前提コマンド（<c>git</c>／<c>dotnet</c>）が PATH に無ければ何もせず異常終了（非 0）。
 ///
 /// <see cref="RunInstall"/> は <c>--plugin install &lt;url&gt; [-b &lt;branch&gt;]</c> の実体。
@@ -22,9 +24,16 @@ internal static class PluginInstaller
     private const int ExitOk = 0;
     private const int ExitError = 1;
 
+    /// <summary>
+    /// <c>--update</c> の位置引数で本体のみの更新を指す予約名。plugins.yml のエントリ名より優先する
+    /// （プラグイン名としては使えない）。
+    /// </summary>
+    public const string SelfTargetName = "self";
+
     /// <param name="pluginName">
     /// 指定時はその 1 プラグインのみ更新する（<c>--update &lt;plugin name&gt;</c>）。名前は plugins.yml の各
-    /// エントリのリポジトリ名（URL 末尾）と照合する。null（引数なしの <c>--update</c>）は全プラグイン＋本体自己更新。
+    /// エントリのリポジトリ名（URL 末尾）と照合する。<see cref="SelfTargetName"/>（<c>--update self</c>）は
+    /// 本体のみ更新。null（引数なしの <c>--update</c>）は全プラグイン＋本体自己更新。
     /// </param>
     public static int Run(string? pluginName = null)
     {
@@ -59,10 +68,50 @@ internal static class PluginInstaller
             return ExitError;
         }
 
+        // 本体のみの更新は lib／repos を使わない（tmp へ clone して publish する）。plugins.yml の
+        // エントリ照合より先に判定し、self を予約名として扱う。
+        if (string.Equals(pluginName, SelfTargetName, StringComparison.OrdinalIgnoreCase))
+        {
+            return RunSelfOnly(config);
+        }
+
         Directory.CreateDirectory(InstallPaths.ReposDir);
         Directory.CreateDirectory(InstallPaths.LibDir);
 
         return pluginName is null ? RunAll(config) : RunSingle(config, pluginName);
+    }
+
+    /// <summary>
+    /// 本体のみ更新する（<c>--update self</c>）。プラグインの clone／build・<c>lib/</c> の配置は一切行わない。
+    ///
+    /// 本体の publish に必要な baselib は <see cref="SelfUpdater.Run"/> が tmp 側へ clone するため、
+    /// <c>repos/</c> の baselib は用意しない（稼働中の <c>lib/</c> を触らないため daemon の再起動も不要）。
+    /// </summary>
+    private static int RunSelfOnly(PluginsConfig config)
+    {
+        bool handedOff;
+        try
+        {
+            Console.WriteLine($"==== self: {config.Self.Path} ({config.Self.Branch}) ====");
+            handedOff = SelfUpdater.Run(config.Self, config.Baselib);
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"本体更新に失敗（本体は据え置き）: {ex.Message}");
+            return ExitError;
+        }
+
+        if (handedOff)
+        {
+            // applier が daemon 停止→exe 置換→再起動まで行う。置換結果は同期では分からない（logs/ で確認）。
+            Console.WriteLine("本体更新をバックグラウンドで適用中。結果は logs/ を参照。");
+            return ExitOk;
+        }
+
+        // ハンドオフ無し＝自己更新をスキップした（理由は SelfUpdater が出力済み）。lib は触っていないため
+        // daemon はそのままでよい。
+        Console.WriteLine("本体は更新していない。");
+        return ExitOk;
     }
 
     /// <summary>全プラグイン＋本体自己更新（引数なしの <c>--update</c>）。従来動作。</summary>
@@ -442,12 +491,15 @@ internal static class PluginInstaller
     }
 
     /// <summary>
-    /// <c>dotnet build</c> 専用の実行。標準出力／標準エラーをリダイレクトして受け取ることで、
-    /// dotnet CLI 側のターミナルロガー（対話端末検知時のみ有効になる、日本語ロケールで語順が
-    /// 崩れることがある要約表示）を無効化させ、成功時は生ログを出さず配置ログのみを見せる。
-    /// 失敗時のみ捕捉したログをそのまま出してから例外を投げる。
+    /// <c>dotnet build</c>／<c>dotnet publish</c> 専用の実行。標準出力／標準エラーをリダイレクトして
+    /// 受け取ることで、dotnet CLI 側のターミナルロガー（対話端末検知時のみ有効になる、日本語ロケールで
+    /// 語順が崩れる要約表示。例: <c>31.4 秒後に 成功しました をビルド</c>）を無効化させ、成功時は生ログを
+    /// 出さずハーネス自身のログのみを見せる。失敗時のみ捕捉したログをそのまま出してから例外を投げる。
+    ///
+    /// 本体の自己更新（<see cref="SelfUpdater.Run"/> の publish）もこの経路を通す。素の
+    /// <see cref="RunOrThrow"/> だと出力が親コンソールへ直に流れ、上記の崩れた要約がそのまま出る。
     /// </summary>
-    private static void RunBuildOrThrow(string file, IReadOnlyList<string> args)
+    internal static void RunBuildOrThrow(string file, IReadOnlyList<string> args)
     {
         var psi = new ProcessStartInfo(file)
         {
